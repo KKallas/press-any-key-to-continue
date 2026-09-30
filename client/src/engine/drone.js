@@ -18,8 +18,9 @@ export class DroneControl {
     this.baseFov = entry.fov;
     this.keys = new Set();
     this.drag = null;
-    this.lock = null; // () => {x, z, vx, vz} of whatever we follow
+    this.lock = null; // () => {x, z, vx, vz, speed} of whatever we follow
     this.locked = true;
+    this.climb = 0; // extra altitude, like GTA2's camera rising with speed
 
     window.addEventListener('keydown', (e) => {
       if (e.target.closest?.('button')) return;
@@ -49,13 +50,17 @@ export class DroneControl {
     }, { passive: true });
   }
 
+  get altitude() {
+    return this.entry.altitude + this.climb;
+  }
+
   get distance() {
-    return this.entry.altitude / Math.tan(this.entry.elevation * DEG);
+    return this.altitude / Math.tan(this.entry.elevation * DEG);
   }
 
   // Ground metres covered by one screen pixel at the aim point.
   metresPerPixel() {
-    const slant = Math.hypot(this.entry.altitude, this.distance);
+    const slant = Math.hypot(this.altitude, this.distance);
     return (2 * slant * Math.tan((this.fov * DEG) / 2)) / window.innerHeight;
   }
 
@@ -72,7 +77,7 @@ export class DroneControl {
   }
 
   zoom(factor) {
-    this.fov = THREE.MathUtils.clamp(this.fov * factor, 3.5, 32);
+    this.fov = THREE.MathUtils.clamp(this.fov * factor, 8, 70);
   }
 
   update(dt) {
@@ -87,6 +92,11 @@ export class DroneControl {
       const ease = 1 - Math.exp(-dt * 3);
       this.target.x += (ax - this.target.x) * ease;
       this.target.y += (az - this.target.y) * ease;
+      // The faster the car, the higher the drone climbs to keep the road ahead in view.
+      const want = Math.abs(t.speed ?? 0) * (this.entry.climbPerSpeed ?? 0);
+      this.climb += (want - this.climb) * (1 - Math.exp(-dt * 1.2));
+    } else {
+      this.climb += (0 - this.climb) * (1 - Math.exp(-dt * 1.2));
     }
     if (k.has('q')) this.theta -= 0.8 * dt;
     if (k.has('e')) this.theta += 0.8 * dt;
@@ -100,7 +110,7 @@ export class DroneControl {
     const d = this.distance;
     cam.position.set(
       this.target.x + Math.sin(this.theta) * d,
-      this.entry.altitude,
+      this.altitude,
       this.target.y + Math.cos(this.theta) * d,
     );
     cam.lookAt(this.target.x, 0, this.target.y);
@@ -111,13 +121,16 @@ export class DroneControl {
   }
 
   telemetry() {
-    const alt = Math.round(this.entry.altitude * 3.28084);
-    const hdg = Math.round(((((this.theta + Math.PI) / DEG) % 360) + 360) % 360);
-    const zoom = (this.baseFov / this.fov).toFixed(1);
-    // A made-up grid reference; the city isn't on anyone's map.
     const e = String(4400 + Math.round(this.target.x * 10)).padStart(5, '0');
     const n = String(1200 - Math.round(this.target.y * 10)).padStart(5, '0');
-    const mode = this.locked ? 'TRACK' : 'FREE';
-    return `ALT ${alt} FT  HDG ${String(hdg).padStart(3, '0')}\nZOOM ${zoom}X  TGT ${e} ${n}\nMODE ${mode}`;
+    return {
+      alt: Math.round(this.altitude * 3.28084),
+      // Screen-up direction on the ground, as a compass heading.
+      hdg: ((((this.theta + Math.PI) / DEG) % 360) + 360) % 360,
+      zoom: (this.baseFov / this.fov).toFixed(1),
+      // A made-up grid reference; the city isn't on anyone's map.
+      grid: `${e} ${n}`,
+      mode: this.locked ? 'TRACK' : 'FREE',
+    };
   }
 }

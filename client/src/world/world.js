@@ -18,8 +18,8 @@ export class World {
     this.rainLights = [];
     this.street = null;
     this.rain = null;
-    // What the targeting system draws over the drone feed.
-    this.overlay = new THREE.Scene();
+    // What the targeting system knows: line segments for the drone's HUD.
+    this.overlaySegments = [];
     this.blocks = [];
 
     // Cold fill from a sky nobody has written yet.
@@ -71,7 +71,7 @@ export class World {
     if (kind === 'street') {
       const markings = markingsTexture(props.size, props.roadWidth, props.roads, props.seed);
       this.roads = { list: props.roads, half: props.roadWidth / 2, edge: props.size / 2, bounds: props.bounds };
-      this.overlay.add(blockOutlines(props.roads, props.roadWidth / 2));
+      this.overlaySegments.push(...blockOutlines(props.roads, props.roadWidth / 2));
       const r = props.roads;
       let n = 1;
       for (let j = 0; j < r.length - 1; j++) {
@@ -90,7 +90,7 @@ export class World {
     }
     const built = make(props);
     this.scene.add(built.object);
-    if (kind === 'building') this.overlay.add(buildingOutline(props));
+    if (kind === 'building') this.overlaySegments.push(...buildingOutline(props));
     if (built.update) this.updaters.push(built.update);
     if (built.rainLights) {
       this.rainLights.push(...built.rainLights);

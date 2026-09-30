@@ -195,7 +195,7 @@ export const factories = {
     const body = new THREE.Mesh(box(len, height, width), std(0x15181b, { roughness: 0.6 }));
     group.add(body);
     // A lit strip of windows along both sides.
-    const strip = glow('#bfe7ff', 1.8);
+    const strip = glow('#bfe7ff', 0.8);
     for (const s of [-1, 1]) {
       const band = new THREE.Mesh(box(len - 0.6, 0.5, 0.05), strip);
       band.position.set(0, 0.2, s * (width / 2 + 0.01));

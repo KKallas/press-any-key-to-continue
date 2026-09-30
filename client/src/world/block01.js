@@ -184,10 +184,13 @@ export const BLOCK_01 = [
       name: 'UAV-2',
       description: 'EO NIGHT · WIDE',
       target: [0, 0, 0],
-      altitude: 150,
-      elevation: 62,
-      fov: 16,
-      orbitSpeed: 0.03,
+      // Nearly straight down, low and wide, so tall buildings lean away from
+      // the middle of the screen the way they do in GTA2.
+      altitude: 78,
+      elevation: 84,
+      fov: 44,
+      orbitSpeed: 0.012,
+      climbPerSpeed: 2.2,
       fog: 0.0032,
       lens: {
         barrel: 0.0, dirt: 0.15, noise: 0.3, aberration: 0.0008, drops: 0, crack: false, seed: 2,

@@ -88,107 +88,10 @@
   /* Drone mode: the whole display goes phosphor green. */
   body.mode-drone { --osd: var(--hud); --osd-dim: var(--hud-dim); }
 
-  /* Drone symbology: crosshair, corner brackets, telemetry. Shown only in drone mode. */
-  .drone-only { display: none; }
-  body.mode-drone .drone-only { display: block; }
-  body.mode-drone .cam-only { display: none; }
-  .reticle {
-    position: fixed;
-    left: 50%;
-    top: 50%;
-    width: 120px;
-    height: 120px;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-  }
-  .reticle::before, .reticle::after {
-    content: "";
-    position: absolute;
-    background: var(--osd);
-    box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
-  }
-  .reticle::before { left: 0; right: 0; top: 50%; height: 1px; mask: linear-gradient(90deg, #000 40%, transparent 40%, transparent 60%, #000 60%); -webkit-mask: linear-gradient(90deg, #000 40%, transparent 40%, transparent 60%, #000 60%); }
-  .reticle::after { top: 0; bottom: 0; left: 50%; width: 1px; mask: linear-gradient(180deg, #000 40%, transparent 40%, transparent 60%, #000 60%); -webkit-mask: linear-gradient(180deg, #000 40%, transparent 40%, transparent 60%, #000 60%); }
-  .frame-brackets {
-    position: fixed;
-    inset: 12%;
-    pointer-events: none;
-    border: 1px solid transparent;
-    background:
-      linear-gradient(var(--osd), var(--osd)) top left / 28px 1px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) top left / 1px 28px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) top right / 28px 1px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) top right / 1px 28px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) bottom left / 28px 1px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) bottom left / 1px 28px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) bottom right / 28px 1px no-repeat,
-      linear-gradient(var(--osd), var(--osd)) bottom right / 1px 28px no-repeat;
-    opacity: 0.7;
-  }
-  .telemetry { font-variant-numeric: tabular-nums; line-height: 1.15; white-space: pre; margin-top: 0.3em; }
+  /* In drone mode the symbology is drawn into the video itself (see hud.js);
+     only the controls and the hint stay on top as page elements. */
+  body.mode-drone .cam-only { visibility: hidden; }
   .hint { font-size: 0.72em; text-align: center; }
-
-  /* Hackable cameras, marked on the drone feed. */
-  #markers { position: fixed; inset: 0; pointer-events: none; }
-  .cam-marker {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    font: inherit;
-    font-size: clamp(15px, 1.6vw, 20px);
-    letter-spacing: 0.06em;
-    color: var(--osd);
-    background: transparent;
-    border: 0;
-    padding: 0;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    text-shadow: 0 0 4px rgba(0, 0, 0, 1);
-  }
-  .cam-marker { font-size: clamp(13px, 1.3vw, 17px); color: var(--hud-dim); }
-  .cam-marker .box {
-    width: 10px;
-    height: 10px;
-    border: 1px solid var(--hud-dim);
-    transform: rotate(45deg);
-  }
-  .block-tag {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    font-size: clamp(16px, 1.6vw, 22px);
-    letter-spacing: 0.2em;
-    color: var(--hud-faint);
-    text-shadow: 0 0 4px rgba(0, 0, 0, 1);
-    white-space: nowrap;
-  }
-  /* The tracking box: four corners around whatever the drone follows. */
-  .track {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    --c: var(--hud);
-    background:
-      linear-gradient(var(--c), var(--c)) top left / 9px 2px no-repeat,
-      linear-gradient(var(--c), var(--c)) top left / 2px 9px no-repeat,
-      linear-gradient(var(--c), var(--c)) top right / 9px 2px no-repeat,
-      linear-gradient(var(--c), var(--c)) top right / 2px 9px no-repeat,
-      linear-gradient(var(--c), var(--c)) bottom left / 9px 2px no-repeat,
-      linear-gradient(var(--c), var(--c)) bottom left / 2px 9px no-repeat,
-      linear-gradient(var(--c), var(--c)) bottom right / 9px 2px no-repeat,
-      linear-gradient(var(--c), var(--c)) bottom right / 2px 9px no-repeat;
-    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 1));
-  }
-  .track-label {
-    position: absolute;
-    left: calc(100% + 8px);
-    top: -4px;
-    font-size: clamp(14px, 1.4vw, 19px);
-    color: var(--hud);
-    white-space: nowrap;
-    text-shadow: 0 0 4px rgba(0, 0, 0, 1);
-  }
 
   /* The hack: a terminal session typed over the snow while the feed connects. */
   #hack {
@@ -219,17 +122,12 @@
 
 <canvas id="feed" aria-label="Drone and surveillance camera views of a rainy street at night"></canvas>
 
-<div class="reticle drone-only" aria-hidden="true"></div>
-<div class="frame-brackets drone-only" aria-hidden="true"></div>
-<div id="markers" class="drone-only"></div>
-
 <div class="osd" aria-live="off">
-  <div class="osd-top">
+  <div class="osd-top cam-only">
     <div>
       <div class="rec"><span class="rec-dot" id="rec-dot"></span><span>REC</span></div>
       <div id="cam-name">UAV-2</div>
       <div class="dim" id="cam-desc">EO NIGHT · WIDE</div>
-      <div class="telemetry dim drone-only" id="telemetry"></div>
     </div>
     <div class="clock">
       <div id="date">31.12.1999</div>

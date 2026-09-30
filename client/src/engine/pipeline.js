@@ -34,13 +34,16 @@ const CameraShader = {
     uCompress: { value: 0.8 },
     uGlitch: { value: 1.0 },
     uLoss: { value: 0.0 },
+    tHud: { value: null },
+    uHud: { value: 0.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
   `,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse, tBloom, tDirt, tDrops;
+    uniform sampler2D tDiffuse, tBloom, tDirt, tDrops, tHud;
+    uniform float uHud;
     uniform float uTime, uAspect, uExposure, uBarrel, uAberration, uDirt, uDrops, uNoise, uGrade;
     uniform vec2 uRes, uVideoRes;
     uniform float uField, uFrame, uCompress, uGlitch, uLoss;
@@ -149,6 +152,18 @@ const CameraShader = {
         col = graded;
       }
 
+      // Burned-in symbology. It joins the picture here, after the grade and
+      // before compression and noise, so it tears, blocks and interlaces
+      // with the rest of the frame. A soft halo stands in for phosphor.
+      if (uHud > 0.5) {
+        vec2 hp = 1.6 / uVideoRes;
+        float core = texture2D(tHud, uv).a;
+        float halo = texture2D(tHud, uv + vec2(hp.x, 0.0)).a + texture2D(tHud, uv - vec2(hp.x, 0.0)).a
+                   + texture2D(tHud, uv + vec2(0.0, hp.y)).a + texture2D(tHud, uv - vec2(0.0, hp.y)).a;
+        vec3 phosphor = vec3(0.55, 1.0, 0.66);
+        col = mix(col, phosphor, clamp(core * 0.95 + halo * 0.09, 0.0, 1.0));
+      }
+
       // 7. Compression: banding, and blocks that don't quite agree.
       float levels = mix(96.0, 22.0, uCompress);
       col = floor(col * levels + hash12(blk + 0.5) * 0.6) / levels;
@@ -228,6 +243,16 @@ export class Pipeline {
 
     this.composer = composer;
     this.cameraPass = cam;
+    this.setHud(this.hud ?? null);
+  }
+
+  // The drone's symbology texture, or null for none.
+  setHud(texture) {
+    this.hud = texture;
+    if (this.cameraPass) {
+      this.cameraPass.uniforms.tHud.value = texture;
+      this.cameraPass.uniforms.uHud.value = texture ? 1 : 0;
+    }
   }
 
   setLoss(v) {
