@@ -67,7 +67,7 @@ export class NavGrid {
         const k = j * this.w + i;
         // Free only if the whole cell is: centre and corners. A route through
         // a cell that's only half clear is a route into a wall.
-        const h = cell * 0.5;
+        const h = cell * 0.3;
         this.free[k] = free(x, z) && free(x - h, z - h) && free(x + h, z - h) && free(x - h, z + h) && free(x + h, z + h) ? 1 : 0;
         this.road[k] = surface(x, z) ? 1 : 0;
       }
@@ -99,6 +99,7 @@ export class NavGrid {
       }
       id++;
     }
+    this.biggest = this.size.reduce((b, n, i, a) => (n > (a[b] ?? 0) ? i : b), 0);
     this.dirty = false;
   }
 
@@ -125,22 +126,48 @@ export class NavGrid {
     return null;
   }
 
-  // The cell near (x, z) in the biggest area within reach.
-  biggestNear(x, z, maxRing) {
-    const [ci, cj] = this.cellOf(x, z);
-    let best = null;
-    let bs = 0;
-    for (let j = cj - maxRing; j <= cj + maxRing; j++) {
-      for (let i = ci - maxRing; i <= ci + maxRing; i++) {
-        if (!this.inside(i, j)) continue;
-        const c = this.comp[j * this.w + i];
-        if (c >= 0 && this.size[c] > bs) {
-          bs = this.size[c];
-          best = c;
-        }
+  // A way from (x, z) to a free cell of area `comp`, felt out on the body's
+  // own free map in half-metre steps, within `reach` metres. Returns points
+  // a couple of metres apart, starting at `from`, or null.
+  escape(from, comp, reach = 40) {
+    if (comp == null || comp < 0) return null;
+    const st = 0.5;
+    const n = Math.ceil(reach / st);
+    const side = 2 * n + 1;
+    const came = new Int32Array(side * side).fill(-2);
+    const at = (k) => [from[0] + ((k % side) - n) * st, from[1] + (Math.floor(k / side) - n) * st];
+    const startK = n * side + n;
+    came[startK] = -1;
+    const queue = [startK];
+    for (let q = 0; q < queue.length; q++) {
+      const k = queue[q];
+      const [x, z] = at(k);
+      const [ci, cj] = this.cellOf(x, z);
+      if (this.inside(ci, cj) && this.comp[cj * this.w + ci] === comp) {
+        const path = [];
+        for (let c = k; c !== -1; c = came[c]) path.push(at(c));
+        path.reverse();
+        // Keep a point every couple of metres, and the last one.
+        const out = [path[0]];
+        for (let i = 4; i < path.length - 1; i += 4) out.push(path[i]);
+        out.push(this.centre(ci, cj));
+        return out;
+      }
+      const i = k % side;
+      const j = (k - i) / side;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di;
+        const nj = j + dj;
+        if (ni < 0 || nj < 0 || ni >= side || nj >= side) continue;
+        const nk = nj * side + ni;
+        if (came[nk] !== -2) continue;
+        const [px, pz] = at(nk);
+        if (!this.freeAt(px, pz)) continue;
+        came[nk] = k;
+        queue.push(nk);
       }
     }
-    return best === null ? null : this.nearestIn(x, z, best, maxRing);
+    return null;
   }
 
   centre(i, j) {
@@ -186,22 +213,21 @@ export class NavGrid {
     let g = this.nearestFree(to[0], to[1]);
     if (!g) return null;
     const W = this.w;
-    const cellsNear = Math.ceil(4 / this.cell);
     let s = this.nearestFree(from[0], from[1]);
     let home = s && this.comp[s[1] * W + s[0]];
     const goalComp = this.comp[g[1] * W + g[0]];
-    // The body can stand where the grid (which only counts whole cells) sees
-    // a small pocket, or no room at all: start from the goal's area, or the
-    // biggest one, if either is a few metres away.
+    // The grid only counts whole cells, so the body can stand in a gap it
+    // sees as a sealed pocket, or as no room at all. Feel the way out on the
+    // real map to the goal's area, or failing that, the city's main one.
+    let prefix = null;
     if (!s || home !== goalComp) {
-      const alt = this.nearestIn(from[0], from[1], goalComp, cellsNear);
-      if (alt) s = alt;
-      else if (!s || this.size[home] < 200) {
-        const big = this.biggestNear(from[0], from[1], cellsNear);
-        if (big) s = big;
+      prefix = this.escape(from, goalComp);
+      if (!prefix && (!s || this.size[home] < 200)) prefix = this.escape(from, this.biggest);
+      if (prefix) {
+        s = this.cellOf(...prefix[prefix.length - 1]);
+        home = this.comp[s[1] * W + s[0]];
       }
       if (!s) return null;
-      home = this.comp[s[1] * W + s[0]];
     }
     let reachable = goalComp === home;
     if (!reachable) {
@@ -261,13 +287,19 @@ export class NavGrid {
       }
     }
     const end = found ? goal : best;
-    if (end === start) return null;
+    if (end === start && !prefix) return null;
     const cells = [];
     for (let k = end; k !== -1; k = came[k]) cells.push(k);
     cells.reverse();
     const pts = cells.map((k) => this.centre(k % W, Math.floor(k / W)));
-    pts[0] = [from[0], from[1]];
-    const out = this.smooth(pts, offRoad);
+    let out;
+    if (prefix) {
+      pts[0] = prefix[prefix.length - 1];
+      out = [...prefix, ...this.smooth(pts, offRoad).slice(1)];
+    } else {
+      pts[0] = [from[0], from[1]];
+      out = this.smooth(pts, offRoad);
+    }
     out.reached = found && reachable;
     return out;
   }
