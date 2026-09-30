@@ -71,25 +71,30 @@ Stay with CC0 sources so operators can reskin without licensing headaches:
 
 The LLM generator configures modular pieces rather than inventing meshes, which keeps the Holy Modular Triad honest. Lens dirt, rain, and window textures are generated in code.
 
-## The drone and the street cameras
+## The drone
 
-**You move as a drone.** The player's own view is a surveillance drone high over the block, holding a slow orbit around its aim point the way a real one circles a target. The feed is a telephoto look almost straight down, with military symbology: crosshair, frame brackets, altitude, heading, zoom and a grid reference for a city that isn't on anyone's map. From altitude the haze thins out, and the drone's digital recording is smoother (25 fps) but blockier than the street cameras.
+**You move as a drone.** The player's view is a surveillance drone high over the city, holding a slow orbit around its aim point the way a real one circles a target. The feed is a telephoto look almost straight down, with the display in phosphor green: crosshair, frame brackets, altitude, heading, zoom, mode, and a grid reference for a city that isn't on anyone's map. From altitude the haze thins out, and the drone's digital recording is smoother (25 fps) but blockier than the street cameras.
 
-**You see the street by hacking its cameras.** Every CCTV camera is an object in the world, a housing with a red tally light on a lamp post, a wall corner or a mast. From the drone they are marked on the feed. Click one and a 1999 telnet login types itself over signal snow, then you are on that camera's live feed, with that camera's glass and recording: CAM 03 is a filthy fisheye on a lamp post at 10 fps, CAM 11 over the bar is almost decent, CAM 14 is cracked. `Esc` returns to the drone and `Tab` jumps to the next camera.
+**The tactical overlay.** On top of the degraded video the targeting system draws what it knows, crisp and green: each building's roof outline, its corner edges fading out partway down the facade, a dashed footprint, dashed outlines around each block and block labels. It keeps the city readable when the picture isn't. The overlay is drawn after the post chain, so none of the grade, compression or lens dirt touches it.
 
-Later the login becomes the hack itself: the pre-2000 machines behind each camera, with their real weaknesses.
+**Tracking.** The drone locks on to the car you drive, with a tracking box and ground speed, and leads it slightly. Drag to look away (the mode reads FREE), `F` to lock back on (TRACK).
+
+**Driving.** Four blocks in a 2x2 grid, ringed by roads that run on past the city into empty lots. The car stays on the roads and scrapes along kerbs. Steering is relative to the car, so it stays right as the drone circles. Movement goes through the server as transient events: the client simulates, sends, and draws the car only when the event comes back, so the same path works over a network later.
+
+**Street cameras.** The CCTV cameras are objects in the world, housings with a red tally light on lamp posts, walls and a mast, tagged on the drone feed. Hacking into them comes later, through an in-game web browser of the period. For development, `Tab` jumps into the next camera's feed and `Esc` returns to the drone.
 
 ## Current state
 
-The engine core in [`client/`](../client) draws one block in the rain, with placeholder buildings, a street, a red car, a few figures under umbrellas, streetlamps, neon, four street cameras and the drone. Run `python3 serve.py` inside `client/` and open http://localhost:8000. It's a small static server with caching turned off, so edits show up on reload.
+The engine core in [`client/`](../client) draws four blocks in the rain, with placeholder buildings, streets, a drivable red car, a few figures under umbrellas, streetlamps, neon, four street cameras and the drone. Run `python3 serve.py` inside `client/` and open http://localhost:8000. It's a small static server with caching turned off, so edits show up on reload.
 
 | Input | Does |
 |---|---|
-| Drag, `W` `A` `S` `D` or arrow keys | Pan the drone's aim point |
+| `W` `A` `S` `D` or arrow keys | Drive |
+| `Space` | Handbrake |
+| Drag | Look around (breaks the lock) |
+| `F` | Lock the drone back on the car |
 | `Q` `E` | Steer the orbit |
 | Scroll, `+` `-` | Zoom the drone's lens |
-| Click a camera marker | Hack into that camera |
-| `Tab` | Next camera |
-| `Esc` | Back to the drone |
+| `Tab`, `Esc` | Development: into a street camera's feed, back to the drone |
 | `1` `2` `3` | Quality tier |
 | `G` | Grade on or off |

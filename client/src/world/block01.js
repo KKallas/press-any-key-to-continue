@@ -1,7 +1,11 @@
-// The event log for Block 01, as the server would send it to a client that
-// is watching CAM 07. Every entity arrives as a plain, serialisable event.
-// Coordinates are metres: X runs east, Z runs south, Y is up. Two roads
-// cross at the origin; each is 10 m wide with 3 m sidewalks.
+// The event log for Block 01, as the server would send it to a client.
+// Every entity arrives as a plain, serialisable event.
+// Coordinates are metres: X runs east, Z runs south, Y is up.
+//
+// Four city blocks in a 2x2 grid. Roads run at -50, 0 and 50 on both axes,
+// 10 m wide with 3 m sidewalks, so each block's lot spans 8..42 m from the
+// centre lines. Past the ring roads the streets run on into empty lots:
+// the part of the city nobody has written yet.
 
 const B = 'B01';
 
@@ -12,7 +16,7 @@ const building = (id, x, z, w, d, h, seed) => ({
 
 export const BLOCK_01 = [
   { t: 0, block: B, type: 'spawn', kind: 'street', id: 'street',
-    props: { size: 140, roadWidth: 10, sidewalk: 3, curb: 0.15, seed: 7 } },
+    props: { size: 170, roadWidth: 10, sidewalk: 3, curb: 0.15, seed: 7, roads: [-50, 0, 50], bounds: 42 } },
 
   { t: 0, block: B, type: 'spawn', kind: 'weather', id: 'weather',
     props: { rain: 1.0, wind: [0.2, 0, 0.06], fog: 0.013 } },
@@ -33,6 +37,25 @@ export const BLOCK_01 = [
   building('b10', 14, 15, 10, 10, 6, 41),
   building('b11', 27, 15, 12, 12, 9, 42),
 
+  // Filling the four blocks out towards the ring roads.
+  building('b12', -14, -38.5, 10, 7, 26, 15),
+  building('b13', -27, -38.5, 12, 7, 12, 16),
+  building('b14', -38.5, -14, 7, 10, 14, 17),
+  building('b15', -38.5, -27, 7, 12, 20, 18),
+  building('b16', -38.5, -38.5, 7, 7, 9, 19),
+  building('b17', 27.5, -27, 11, 12, 16, 24),
+  building('b18', 38.5, -14, 7, 10, 40, 25),
+  building('b19', 38.5, -31, 7, 18, 24, 26),
+  building('b20', 20, -38.5, 24, 7, 12, 27),
+  building('b21', -14, 27, 10, 10, 20, 33),
+  building('b22', -26, 30, 12, 10, 36, 34),
+  building('b23', -38.5, 20, 7, 24, 18, 35),
+  building('b24', -20, 38.5, 24, 7, 10, 36),
+  building('b25', 14, 30, 10, 12, 26, 43),
+  building('b26', 30, 33, 10, 8, 44, 44),
+  building('b27', 38.5, 17, 7, 16, 20, 45),
+  building('b28', 20, 39.5, 24, 5, 8, 46),
+
   // A walkway over the north road, between the two tallest towers.
   { t: 0, block: B, type: 'spawn', kind: 'skybridge', id: 'bridge1',
     props: { from: [-8.5, 28, -27], to: [9, 28, -27], width: 3, height: 2.6 } },
@@ -48,6 +71,23 @@ export const BLOCK_01 = [
   ].map(([id, x, z, ax, az]) => ({
     t: 0, block: B, type: 'spawn', kind: 'lamp', id,
     props: { x, z, arm: [ax, az], height: 7, color: '#ff9a3c', intensity: 260 },
+  })),
+  // Along the ring roads the lamps glow but cast no real light: every real
+  // light costs every pixel on screen, and from the drone the glow is enough.
+  ...[
+    ['lamp7', 43.4, -6.6, 1, 0],
+    ['lamp8', -43.4, 6.6, -1, 0],
+    ['lamp9', 6.6, 43.4, 0, 1],
+    ['lamp10', -6.6, -43.4, 0, -1],
+    ['lamp11', 43.4, 43.4, 1, 0],
+    ['lamp12', -43.4, -43.4, -1, 0],
+    ['lamp13', 43.4, -43.4, 0, -1],
+    ['lamp14', -43.4, 43.4, 0, 1],
+    ['lamp15', 25, 43.4, 0, 1],
+    ['lamp16', -25, -43.4, 0, -1],
+  ].map(([id, x, z, ax, az]) => ({
+    t: 0, block: B, type: 'spawn', kind: 'lamp', id,
+    props: { x, z, arm: [ax, az], height: 7, color: '#ff9a3c', intensity: 0 },
   })),
 
   // Neon. `face` is the direction the sign looks out towards.

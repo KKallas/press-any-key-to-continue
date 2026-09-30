@@ -94,25 +94,39 @@ export const factories = {
     return { object: group };
   },
 
-  street({ size, roadWidth, sidewalk, curb }) {
+  street({ size, roadWidth, sidewalk, curb, roads, bounds }) {
     // The road surface itself is built by the engine (it needs the renderer
-    // for reflections). Here: the four raised sidewalk corners and kerbs.
+    // for reflections). Here: raised sidewalk slabs between the roads, a
+    // darker lot inside each, and empty lots out past the ring roads.
     const group = new THREE.Group();
     const half = roadWidth / 2;
-    const outer = size / 2;
     const concrete = std(0x2a2c2e, { roughness: 0.45 });
     const lotMat = std(0x0c0d0e, { roughness: 0.9 });
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        const w = outer - half;
-        // Sidewalk slab covering the whole corner lot; buildings stand on it.
-        const slab = new THREE.Mesh(box(w, curb, w), concrete);
-        slab.position.set(sx * (half + w / 2), curb / 2, sz * (half + w / 2));
+    const voidMat = std(0x050506, { roughness: 1 });
+    const edge = size / 2;
+    // Intervals between roads along one axis; a side that ends at a road
+    // gets a sidewalk, a side that ends at the world's edge doesn't.
+    const cuts = [-edge, ...roads, edge];
+    const spans = [];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const loRoad = i > 0;
+      const hiRoad = i < cuts.length - 2;
+      spans.push({ a: cuts[i] + (loRoad ? half : 0), b: cuts[i + 1] - (hiRoad ? half : 0), loRoad, hiRoad });
+    }
+    for (const sx of spans) {
+      for (const sz of spans) {
+        const w = sx.b - sx.a;
+        const d = sz.b - sz.a;
+        const slab = new THREE.Mesh(box(w, curb, d), concrete);
+        slab.position.set((sx.a + sx.b) / 2, curb / 2, (sz.a + sz.b) / 2);
         group.add(slab);
-        // Darker lot interior behind the sidewalk strip.
-        const lw = w - sidewalk;
-        const lot = new THREE.Mesh(box(lw, 0.02, lw), lotMat);
-        lot.position.set(sx * (half + sidewalk + lw / 2), curb + 0.01, sz * (half + sidewalk + lw / 2));
+        const inside = sx.loRoad && sx.hiRoad && sz.loRoad && sz.hiRoad;
+        const la = sx.a + (sx.loRoad ? sidewalk : 0);
+        const lb = sx.b - (sx.hiRoad ? sidewalk : 0);
+        const ma = sz.a + (sz.loRoad ? sidewalk : 0);
+        const mb = sz.b - (sz.hiRoad ? sidewalk : 0);
+        const lot = new THREE.Mesh(box(lb - la, 0.02, mb - ma), inside ? lotMat : voidMat);
+        lot.position.set((la + lb) / 2, curb + 0.01, (ma + mb) / 2);
         group.add(lot);
       }
     }
@@ -209,9 +223,11 @@ export const factories = {
     head.position.copy(headPos);
     head.rotation.y = -Math.atan2(az, ax);
     group.add(head);
-    const light = new THREE.PointLight(color, intensity, 26, 2);
-    light.position.copy(headPos).add(new THREE.Vector3(0, -0.3, 0));
-    group.add(light);
+    if (intensity > 0) {
+      const light = new THREE.PointLight(color, intensity, 26, 2);
+      light.position.copy(headPos).add(new THREE.Vector3(0, -0.3, 0));
+      group.add(light);
+    }
     const cone = lightCone(color, 3.2, height - 0.2, 0.05);
     cone.position.copy(headPos).add(new THREE.Vector3(0, -0.1, 0));
     group.add(cone);
@@ -219,7 +235,7 @@ export const factories = {
     const world = new THREE.Vector3(x, 0, z).add(headPos);
     return {
       object: group,
-      rainLights: [{ position: world, color: new THREE.Color(color), strength: 1.0 }],
+      rainLights: intensity > 0 ? [{ position: world, color: new THREE.Color(color), strength: 1.0 }] : [],
     };
   },
 

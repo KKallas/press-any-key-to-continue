@@ -11,6 +11,9 @@
     --osd-dim: rgba(233, 239, 233, 0.55);
     --rec: #ff2a2a;
     --panel: rgba(3, 4, 5, 0.62);
+    --hud: #8dffa8;
+    --hud-dim: rgba(141, 255, 168, 0.62);
+    --hud-faint: rgba(141, 255, 168, 0.35);
     --font-osd: "VT323", "Courier New", ui-monospace, monospace;
     color-scheme: dark;
   }
@@ -82,6 +85,9 @@
   .controls button[aria-pressed="true"] { color: var(--osd); border-color: var(--osd); }
   .controls button:focus-visible { outline: 2px solid var(--osd); outline-offset: 2px; }
   .stats { font-size: 0.8em; font-variant-numeric: tabular-nums; }
+  /* Drone mode: the whole display goes phosphor green. */
+  body.mode-drone { --osd: var(--hud); --osd-dim: var(--hud-dim); }
+
   /* Drone symbology: crosshair, corner brackets, telemetry. Shown only in drone mode. */
   .drone-only { display: none; }
   body.mode-drone .drone-only { display: block; }
@@ -127,7 +133,7 @@
   .cam-marker {
     position: absolute;
     transform: translate(-50%, -50%);
-    pointer-events: auto;
+    pointer-events: none;
     font: inherit;
     font-size: clamp(15px, 1.6vw, 20px);
     letter-spacing: 0.06em;
@@ -142,14 +148,47 @@
     gap: 2px;
     text-shadow: 0 0 4px rgba(0, 0, 0, 1);
   }
+  .cam-marker { font-size: clamp(13px, 1.3vw, 17px); color: var(--hud-dim); }
   .cam-marker .box {
-    width: 18px;
-    height: 18px;
-    border: 1px solid var(--osd);
-    box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--hud-dim);
+    transform: rotate(45deg);
   }
-  .cam-marker:hover .box, .cam-marker:focus-visible .box { border-color: var(--rec); background: rgba(255, 42, 42, 0.18); }
-  .cam-marker:focus-visible { outline: none; }
+  .block-tag {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: clamp(16px, 1.6vw, 22px);
+    letter-spacing: 0.2em;
+    color: var(--hud-faint);
+    text-shadow: 0 0 4px rgba(0, 0, 0, 1);
+    white-space: nowrap;
+  }
+  /* The tracking box: four corners around whatever the drone follows. */
+  .track {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    --c: var(--hud);
+    background:
+      linear-gradient(var(--c), var(--c)) top left / 9px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) top left / 2px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) top right / 9px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) top right / 2px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom left / 9px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom left / 2px 9px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom right / 9px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom right / 2px 9px no-repeat;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 1));
+  }
+  .track-label {
+    position: absolute;
+    left: calc(100% + 8px);
+    top: -4px;
+    font-size: clamp(14px, 1.4vw, 19px);
+    color: var(--hud);
+    white-space: nowrap;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 1);
+  }
 
   /* The hack: a terminal session typed over the snow while the feed connects. */
   #hack {

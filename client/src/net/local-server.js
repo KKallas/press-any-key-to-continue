@@ -12,9 +12,11 @@ export class LocalServer {
     for (const event of log) this.append(event);
   }
 
+  // Transient events (a car's position every frame) are broadcast but not
+  // kept: the log holds what happened, not every step of how.
   append(event) {
     const stamped = { seq: this.log.length, ...event };
-    this.log.push(stamped);
+    if (!event.transient) this.log.push(stamped);
     for (const sub of this.subscribers) {
       if (sub.filter(stamped)) sub.handler(stamped);
     }

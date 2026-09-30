@@ -202,6 +202,12 @@ export class Rain {
     return pts;
   }
 
+  // Rain only falls where someone is looking.
+  setCenter(x, z) {
+    this.streaks.material.uniforms.uCenter.value.set(x, 0, z);
+    this.splashes.material.uniforms.uCenter.value.set(x, 0, z);
+  }
+
   update(time, viewportHeight) {
     this.streaks.material.uniforms.uTime.value = time;
     this.splashes.material.uniforms.uTime.value = time;

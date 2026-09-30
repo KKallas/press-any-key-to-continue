@@ -102,7 +102,7 @@ Grew out of an earlier concept doc, *Uber Runner* (2024), about a gig courier in
 
 ![CAM 14, hacked](docs/cam14-block01.png)
 
-Engine core: one block in the rain with placeholder models. You watch it from a circling drone and hack into the street cameras for a closer look. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
+Engine core: four blocks in the rain with placeholder models. You drive the red car and watch from a drone that circles and tracks it, with a green tactical overlay over the degraded video. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
 
 ## License
 

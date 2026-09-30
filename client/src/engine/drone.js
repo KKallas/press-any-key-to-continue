@@ -1,11 +1,12 @@
 // The player's drone. It circles its aim point on its own, the way a
-// surveillance drone holds an orbit over a target; the player moves the aim
-// point, steers the orbit and zooms the telephoto lens.
+// surveillance drone holds an orbit over a target. By default it is locked
+// on to something (the car) and follows it; dragging breaks the lock to look
+// around, F locks back on. Q and E steer the orbit, scroll zooms.
 
 import * as THREE from 'three';
 
 const DEG = Math.PI / 180;
-const LIMIT = 42; // metres from the block centre the aim point may wander
+const LIMIT = 70; // metres from the centre the aim point may wander
 
 export class DroneControl {
   constructor(entry, canvas) {
@@ -17,10 +18,13 @@ export class DroneControl {
     this.baseFov = entry.fov;
     this.keys = new Set();
     this.drag = null;
+    this.lock = null; // () => {x, z, vx, vz} of whatever we follow
+    this.locked = true;
 
     window.addEventListener('keydown', (e) => {
       if (e.target.closest?.('button')) return;
       this.keys.add(e.key.toLowerCase());
+      if (e.key === 'f' || e.key === 'F') this.locked = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
@@ -32,6 +36,7 @@ export class DroneControl {
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!this.drag) return;
+      this.locked = false;
       this.pan(e.clientX - this.drag.x, e.clientY - this.drag.y);
       this.drag = { x: e.clientX, y: e.clientY };
     });
@@ -74,14 +79,15 @@ export class DroneControl {
     if (!this.enabled) return;
     this.theta += this.entry.orbitSpeed * dt;
     const k = this.keys;
-    const step = 420 * dt; // pixels-per-second equivalent, so zoom scales it
-    let dx = 0;
-    let dy = 0;
-    if (k.has('a') || k.has('arrowleft')) dx += step;
-    if (k.has('d') || k.has('arrowright')) dx -= step;
-    if (k.has('w') || k.has('arrowup')) dy += step;
-    if (k.has('s') || k.has('arrowdown')) dy -= step;
-    if (dx || dy) this.pan(dx, dy);
+    if (this.locked && this.lock) {
+      // Aim a little ahead of a moving target, and ease towards it.
+      const t = this.lock();
+      const ax = t.x + t.vx * 0.8;
+      const az = t.z + t.vz * 0.8;
+      const ease = 1 - Math.exp(-dt * 3);
+      this.target.x += (ax - this.target.x) * ease;
+      this.target.y += (az - this.target.y) * ease;
+    }
     if (k.has('q')) this.theta -= 0.8 * dt;
     if (k.has('e')) this.theta += 0.8 * dt;
     if (k.has('+') || k.has('=')) this.zoom(Math.exp(-1.2 * dt));
@@ -111,6 +117,7 @@ export class DroneControl {
     // A made-up grid reference; the city isn't on anyone's map.
     const e = String(4400 + Math.round(this.target.x * 10)).padStart(5, '0');
     const n = String(1200 - Math.round(this.target.y * 10)).padStart(5, '0');
-    return `ALT ${alt} FT  HDG ${String(hdg).padStart(3, '0')}\nZOOM ${zoom}X  TGT ${e} ${n}`;
+    const mode = this.locked ? 'TRACK' : 'FREE';
+    return `ALT ${alt} FT  HDG ${String(hdg).padStart(3, '0')}\nZOOM ${zoom}X  TGT ${e} ${n}\nMODE ${mode}`;
   }
 }

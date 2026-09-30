@@ -9,6 +9,7 @@ import { BLOCK_01 } from './world/block01.js';
 import { Pipeline } from './engine/pipeline.js';
 import { TIERS, AutoQuality } from './engine/quality.js';
 import { DroneControl } from './engine/drone.js';
+import { CarControl } from './engine/car.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -38,6 +39,22 @@ const drone = world.cameras.get(DRONE_ID);
 const droneControl = new DroneControl(drone, canvas);
 const streetCams = [...world.cameras.values()].filter((c) => c.kind === 'camera');
 let active = drone;
+
+// The car you drive. The drone locks on to it.
+const carSpawn = BLOCK_01.find((e) => e.id === 'car1').props;
+const car = new CarControl({
+  server,
+  block: 'B01',
+  id: 'car1',
+  start: { x: carSpawn.x, z: carSpawn.z, heading: carSpawn.heading },
+  roads: world.roads,
+});
+droneControl.lock = () => ({
+  x: car.x,
+  z: car.z,
+  vx: Math.cos(car.heading) * car.speed,
+  vz: -Math.sin(car.heading) * car.speed,
+});
 
 // Quality.
 const pipeline = new Pipeline(renderer);
@@ -115,7 +132,7 @@ function setActive(entry) {
   $('cam-name').textContent = entry.name;
   $('cam-desc').textContent = entry.description;
   $('hint').textContent = entry.kind === 'drone'
-    ? 'DRAG OR WASD TO PAN · Q E TO ORBIT · SCROLL TO ZOOM · CLICK A CAMERA TO HACK IT'
+    ? 'WASD DRIVE · SPACE HANDBRAKE · DRAG TO LOOK · F TRACK CAR · Q E ORBIT · SCROLL ZOOM'
     : 'ESC · BACK TO DRONE    TAB · NEXT CAMERA';
   rebuild();
 }
@@ -168,27 +185,28 @@ function nextCamera() {
   hack(streetCams[(i + 1) % streetCams.length]);
 }
 
-// Markers over the drone feed for every camera the drone can see.
-const markers = new Map();
-for (const cam of streetCams) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'cam-marker';
-  b.innerHTML = `<span class="box"></span><span>${cam.name}</span>`;
-  b.setAttribute('aria-label', `Hack ${cam.name}, ${cam.description}`);
-  b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    hack(cam);
-  });
-  b.addEventListener('pointerdown', (e) => e.stopPropagation());
-  $('markers').appendChild(b);
-  markers.set(cam, b);
+// Tags over the drone feed: known cameras, block names, and the tracking
+// box on the car. Camera hacking comes later, through an in-game browser.
+const tags = [];
+function addTag(className, html, anchor) {
+  const el = document.createElement('div');
+  el.className = className;
+  el.innerHTML = html;
+  $('markers').appendChild(el);
+  tags.push({ el, anchor });
+  return el;
 }
+for (const cam of streetCams) addTag('cam-marker', `<span class="box"></span><span>${cam.name}</span>`, cam.anchor);
+for (const b of world.blocks) addTag('block-tag', b.name, new THREE.Vector3(b.x, 0.2, b.z));
+const carAnchor = new THREE.Vector3();
+const track = addTag('track', '<span class="track-label" id="track-label"></span>', carAnchor);
 
 const tmp = new THREE.Vector3();
-function placeMarkers() {
-  for (const [cam, el] of markers) {
-    tmp.copy(cam.anchor).project(drone.camera);
+const edge = new THREE.Vector3();
+function placeTags() {
+  carAnchor.set(car.x, 1, car.z);
+  for (const { el, anchor } of tags) {
+    tmp.copy(anchor).project(drone.camera);
     const onScreen = tmp.z < 1 && Math.abs(tmp.x) < 0.96 && Math.abs(tmp.y) < 0.92;
     el.hidden = !onScreen;
     if (onScreen) {
@@ -196,11 +214,23 @@ function placeMarkers() {
       el.style.top = `${(-tmp.y * 0.5 + 0.5) * 100}%`;
     }
   }
+  // Size the tracking box to the car as seen from up here.
+  edge.set(3, 0, 0).applyQuaternion(drone.camera.quaternion).add(carAnchor).project(drone.camera);
+  tmp.copy(carAnchor).project(drone.camera);
+  const px = Math.max(26, Math.abs(edge.x - tmp.x) * window.innerWidth);
+  track.style.width = `${px}px`;
+  track.style.height = `${px}px`;
+  $('track-label').textContent = `TRK CAR-1 · ${car.kmh} KM/H`;
 }
 
 // ---- Input -----------------------------------------------------------------
 
 window.addEventListener('keydown', (e) => {
+  // Driving keys must not scroll the page or press a focused button.
+  if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
+    e.preventDefault();
+    document.activeElement?.blur?.();
+  }
   if (e.key === '1') applyTier('low');
   else if (e.key === '2') applyTier('mid');
   else if (e.key === '3') applyTier('high');
@@ -244,6 +274,7 @@ function frame(now) {
   last = now;
   const time = (now - t0) / 1000;
 
+  car.update(dt / 1000);
   if (active === drone) droneControl.update(dt / 1000);
   loss = Math.max(0, loss - dt / 900);
   pipeline.setLoss(loss);
@@ -255,10 +286,21 @@ function frame(now) {
     const shot = n / fps;
     if (active === drone) {
       droneControl.apply();
-      placeMarkers();
+      placeTags();
+      world.rain?.setCenter(droneControl.target.x, droneControl.target.y);
+    } else {
+      world.rain?.setCenter(active.target[0], active.target[2]);
     }
     world.update(shot, renderer.domElement.height);
     pipeline.render(shot, n);
+    if (active === drone) {
+      // The targeting overlay, crisp on top of the degraded video.
+      renderer.autoClear = false;
+      renderer.setRenderTarget(null);
+      renderer.clearDepth();
+      renderer.render(world.overlay, drone.camera);
+      renderer.autoClear = true;
+    }
   }
   osd(time);
 
@@ -275,4 +317,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { server, world, pipeline, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { server, world, pipeline, car, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

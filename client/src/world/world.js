@@ -6,6 +6,7 @@ import { factories } from './factories.js';
 import { createStreet } from '../engine/ground.js';
 import { Rain } from '../engine/rain.js';
 import { markingsTexture } from '../engine/textures.js';
+import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 
 export class World {
   constructor() {
@@ -17,6 +18,9 @@ export class World {
     this.rainLights = [];
     this.street = null;
     this.rain = null;
+    // What the targeting system draws over the drone feed.
+    this.overlay = new THREE.Scene();
+    this.blocks = [];
 
     // Cold fill from a sky nobody has written yet.
     this.scene.add(new THREE.HemisphereLight(0x4a7480, 0x080808, 1.5));
@@ -28,6 +32,8 @@ export class World {
         return this.spawn(event);
       case 'despawn':
         return this.despawn(event.id);
+      case 'move':
+        return this.move(event);
       default:
         console.warn('Unknown event', event);
     }
@@ -55,7 +61,7 @@ export class World {
     if (kind === 'weather') {
       this.scene.fog = new THREE.FogExp2(0x0b1519, props.fog);
       this.baseFog = props.fog;
-      this.rain = new Rain({ center: [0, 0, 0], area: [80, 80], height: 34, wind: props.wind });
+      this.rain = new Rain({ center: [0, 0, 0], area: [90, 90], height: 34, wind: props.wind });
       this.rain.setLights(this.rainLights);
       this.scene.add(this.rain.group);
       this.entities.set(id, { kind, object: this.rain.group });
@@ -63,7 +69,16 @@ export class World {
     }
 
     if (kind === 'street') {
-      const markings = markingsTexture(props.size, props.roadWidth, props.sidewalk, props.seed);
+      const markings = markingsTexture(props.size, props.roadWidth, props.roads, props.seed);
+      this.roads = { list: props.roads, half: props.roadWidth / 2, edge: props.size / 2, bounds: props.bounds };
+      this.overlay.add(blockOutlines(props.roads, props.roadWidth / 2));
+      const r = props.roads;
+      let n = 1;
+      for (let j = 0; j < r.length - 1; j++) {
+        for (let i = 0; i < r.length - 1; i++) {
+          this.blocks.push({ name: `BLK ${String(n++).padStart(2, '0')}`, x: (r[i] + r[i + 1]) / 2, z: (r[j] + r[j + 1]) / 2 });
+        }
+      }
       this.street = createStreet({ size: props.size, roadWidth: props.roadWidth, markings });
       this.scene.add(this.street.group);
     }
@@ -75,6 +90,7 @@ export class World {
     }
     const built = make(props);
     this.scene.add(built.object);
+    if (kind === 'building') this.overlay.add(buildingOutline(props));
     if (built.update) this.updaters.push(built.update);
     if (built.rainLights) {
       this.rainLights.push(...built.rainLights);
@@ -87,6 +103,15 @@ export class World {
   useCamera(entry) {
     if (this.scene.fog) this.scene.fog.density = entry.fog ?? this.baseFog;
     for (const c of this.cameras.values()) if (c.housing) c.housing.visible = c !== entry;
+  }
+
+  move({ id, props }) {
+    const e = this.entities.get(id);
+    if (!e) return;
+    e.object.position.x = props.x;
+    e.object.position.z = props.z;
+    e.object.rotation.y = props.heading;
+    e.state = props;
   }
 
   despawn(id) {

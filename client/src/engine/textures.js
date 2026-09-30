@@ -106,56 +106,56 @@ export function neonTexture(text, color, vertical) {
   return toTexture(c);
 }
 
-// Road markings: worn lane lines, stop lines and zebra crossings.
-// Alpha-only mask in the red channel, mapped over the whole street square.
-export function markingsTexture(size, roadWidth, sidewalk, seed) {
+// Road markings: worn lane lines, stop lines and zebra crossings for a grid
+// of roads. Mask in the red channel, mapped over the whole street square.
+export function markingsTexture(size, roadWidth, roads, seed) {
   const px = 2048;
   const [c, g] = canvas(px, px);
   const r = rng(seed);
   const m = px / size; // pixels per metre
-  const cx = px / 2;
+  const o = px / 2; // world origin in pixels
   const half = roadWidth / 2;
+  const X = (v) => o + v * m;
   g.fillStyle = '#000';
   g.fillRect(0, 0, px, px);
   g.fillStyle = '#fff';
-  const inter = half + 3.5; // clear zone around the crossing
-  // Dashed centre lines.
-  for (let d = inter; d < size / 2; d += 6) {
-    for (const s of [-1, 1]) {
-      g.fillRect(cx + s * d * m - (s < 0 ? 3 * m : 0), cx - 0.08 * m, 3 * m, 0.16 * m);
-      g.fillRect(cx - 0.08 * m, cx + s * d * m - (s < 0 ? 3 * m : 0), 0.16 * m, 3 * m);
+  const clear = half + 3.5; // keep paint out of each crossing
+  const nearCrossing = (v) => roads.some((q) => Math.abs(v - q) < clear);
+  // Dashed centre lines along every road, in both directions.
+  for (const q of roads) {
+    for (let d = -size / 2; d < size / 2; d += 6) {
+      if (nearCrossing(d) || nearCrossing(d + 3)) continue;
+      g.fillRect(X(d), X(q) - 0.08 * m, 3 * m, 0.16 * m);
+      g.fillRect(X(q) - 0.08 * m, X(d), 0.16 * m, 3 * m);
     }
   }
-  // Zebra crossings on all four arms.
-  for (let i = -half + 0.4; i < half - 0.4; i += 1.0) {
-    for (const s of [-1, 1]) {
-      const a = s * (half + 0.6);
-      const b = s * (half + 3.0);
-      const lo = Math.min(a, b);
-      g.fillRect(cx + lo * m, cx + i * m, 2.4 * m, 0.5 * m);
-      g.fillRect(cx + i * m, cx + lo * m, 0.5 * m, 2.4 * m);
+  // Zebras and stop lines on all four arms of every crossing.
+  for (const qx of roads) {
+    for (const qz of roads) {
+      for (let i = -half + 0.4; i < half - 0.4; i += 1.0) {
+        for (const s of [-1, 1]) {
+          const lo = Math.min(s * (half + 0.6), s * (half + 3.0));
+          g.fillRect(X(qx + lo), X(qz + i), 2.4 * m, 0.5 * m);
+          g.fillRect(X(qx + i), X(qz + lo), 0.5 * m, 2.4 * m);
+        }
+      }
+      for (const s of [-1, 1]) {
+        g.fillRect(X(qx + s * (half + 3.4)) - 0.15 * m, X(qz + (s > 0 ? 0 : -half)), 0.3 * m, half * m);
+        g.fillRect(X(qx + (s > 0 ? -half : 0)), X(qz + s * (half + 3.4)) - 0.15 * m, half * m, 0.3 * m);
+      }
     }
-  }
-  // Stop lines.
-  for (const s of [-1, 1]) {
-    g.fillRect(cx + s * (half + 3.4) * m - 0.15 * m, cx + (s > 0 ? 0 : -half) * m, 0.3 * m, half * m);
-    g.fillRect(cx + (s > 0 ? -half : 0) * m, cx + s * (half + 3.4) * m - 0.15 * m, half * m, 0.3 * m);
   }
   // Wear: rub paint away in blotches.
   g.globalCompositeOperation = 'destination-out';
-  for (let i = 0; i < 2600; i++) {
-    const x = r() * px;
-    const y = r() * px;
-    const rad = 2 + r() * 14;
+  for (let i = 0; i < 3200; i++) {
     g.globalAlpha = 0.25 + r() * 0.6;
     g.beginPath();
-    g.arc(x, y, rad, 0, Math.PI * 2);
+    g.arc(r() * px, r() * px, 2 + r() * 12, 0, Math.PI * 2);
     g.fill();
   }
   g.globalAlpha = 1;
   g.globalCompositeOperation = 'source-over';
-  const tex = toTexture(c, { srgb: false });
-  return tex;
+  return toTexture(c, { srgb: false });
 }
 
 // Dirt on the camera glass. Only visible where bright light hits it, so this
