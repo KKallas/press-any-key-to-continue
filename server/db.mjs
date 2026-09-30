@@ -23,7 +23,6 @@ export class OperatorDB {
     this.file = file;
     this.ops = new Map(); // handleLower -> record
     this.load();
-    this.saveTimer = null;
   }
 
   load() {
@@ -35,21 +34,18 @@ export class OperatorDB {
     }
   }
 
-  // Written a moment after a change, and atomically (temp then rename), so a
-  // crash mid-write can't corrupt the file.
+  // Written straight away, and atomically (temp then rename), so a crash
+  // mid-write can't corrupt the file and a signup can't be lost to a kill a
+  // moment later. Accounts change rarely (create, login), so the cost is nil.
   save() {
-    clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      try {
-        fs.mkdirSync(DIR, { recursive: true });
-        const tmp = this.file + '.tmp';
-        fs.writeFileSync(tmp, JSON.stringify({ version: 1, operators: [...this.ops.values()] }, null, 0));
-        fs.renameSync(tmp, this.file);
-      } catch (e) {
-        console.error('operator db save failed:', e.message);
-      }
-    }, 250);
-    this.saveTimer.unref?.();
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      const tmp = this.file + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, operators: [...this.ops.values()] }, null, 0));
+      fs.renameSync(tmp, this.file);
+    } catch (e) {
+      console.error('operator db save failed:', e.message);
+    }
   }
 
   has(handle) {
