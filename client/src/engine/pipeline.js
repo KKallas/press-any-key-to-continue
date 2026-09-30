@@ -67,7 +67,8 @@ const CameraShader = {
         drop = texture2D(tDrops, duv).r;
         vec2 slope = vec2(texture2D(tDrops, duv + vec2(e, 0.0)).r - texture2D(tDrops, duv - vec2(e, 0.0)).r,
                           texture2D(tDrops, duv + vec2(0.0, e)).r - texture2D(tDrops, duv - vec2(0.0, e)).r);
-        uv -= slope * 0.45 * uDrops;
+        // Small, clamped offset: a drop bends the image, it doesn't teleport it.
+        uv -= clamp(slope, -0.25, 0.25) * 0.05 * uDrops;
       }
 
       // 3. Colour fringing towards the edges.

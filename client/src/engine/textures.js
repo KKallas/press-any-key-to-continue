@@ -272,13 +272,17 @@ export function lensDropsTexture(seed) {
     drop(r() * w, r() * h, 2 + r() ** 3 * 16, 1 + r() * 0.4);
   }
   // A few drops that ran, leaving a trail.
+  // Trails are drawn faintly: overlapping full-strength drops would stack
+  // into a flat plateau with hard edges, which refracts as a black smear.
   for (let i = 0; i < 6; i++) {
     const x = r() * w;
-    let y = r() * h * 0.7;
+    const y = r() * h * 0.7;
     const len = 40 + r() * 200;
+    g.globalAlpha = 0.12;
     for (let s = 0; s < len; s += 3) {
       drop(x + Math.sin(s * 0.05) * 3, y + s, 2.2 - s / len * 1.2, 1);
     }
+    g.globalAlpha = 1;
     drop(x, y + len, 7 + r() * 6, 1.3);
   }
   g.globalCompositeOperation = 'source-over';
