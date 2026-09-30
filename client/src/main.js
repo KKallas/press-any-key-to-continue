@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { LocalServer } from './net/local-server.js';
 import { NetServer } from './net/net-server.js';
-import { login } from './game/login.js';
+import { login, resumeSession, clearSession } from './game/login.js';
 import { World } from './world/world.js';
 import { BLOCK_01 } from './world/block01.js';
 import { cityToEvents } from './world/city.js';
@@ -71,7 +71,8 @@ let net = null;
 try {
   const status = location.hash === '#solo' ? null : await fetch('/api/status').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (status) {
-    const user = await login('/api/status', '/api/signup', '/api/login');
+    // A remembered account logs straight back in; otherwise, the terminal.
+    const user = (await resumeSession('/api/login')) || (await login('/api/status', '/api/signup', '/api/login'));
     net = new NetServer({
       log: LOG,
       block: BLOCK,
@@ -1217,4 +1218,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { net, mission, pursuit, inventory, access, places, MINIGAMES, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { net, mission, pursuit, inventory, access, places, MINIGAMES, logout: () => { clearSession(); location.reload(); }, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

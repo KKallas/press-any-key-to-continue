@@ -25,6 +25,41 @@ const HINTS = [
   "hint: OR 1=1 is older than you are.",
 ];
 
+const SESSION_KEY = 'pak.session';
+
+// Remember who you are, so a refresh doesn't send you back to the injection.
+// It's a game credential, not a bank one, so the browser is a fine place for it.
+function saveSession(handle, key) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ handle, key }));
+  } catch {}
+}
+
+export function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {}
+}
+
+// On load, try the remembered account silently. Returns the operator (with a
+// fresh token) if it still checks out, or null to fall back to the terminal.
+export async function resumeSession(loginUrl) {
+  let s;
+  try {
+    s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+  } catch {
+    s = null;
+  }
+  if (!s || !s.handle || !s.key) return null;
+  try {
+    const res = await fetch(loginUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: s.handle, key: s.key }) });
+    const data = await res.json();
+    if (data.ok) return data;
+  } catch {}
+  clearSession(); // stale or rejected: forget it
+  return null;
+}
+
 export function login(statusUrl, signupUrl, loginUrl) {
   return new Promise((resolve) => {
     const wrap = document.createElement('div');
@@ -97,6 +132,7 @@ export function login(statusUrl, signupUrl, loginUrl) {
           const data = await res.json();
           if (data.ok) {
             print(`* welcome back, ${data.handle}. session ${data.runs}.`);
+            saveSession(data.handle, value); // remembered, so a refresh doesn't ask again
             done(data);
             return;
           }
@@ -120,6 +156,8 @@ export function login(statusUrl, signupUrl, loginUrl) {
           print(`* injection accepted. operator ${data.handle} created.`);
           print(`* your key:  ${data.key}`);
           print('* WRITE THIS DOWN. it is how you log back in as ' + data.handle + '.');
+          print('* (this terminal will remember you until you log out.)');
+          saveSession(data.handle, data.key); // stay logged in across refreshes
           done(data);
           return;
         }
