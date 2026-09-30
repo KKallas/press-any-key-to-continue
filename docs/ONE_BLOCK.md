@@ -15,13 +15,14 @@ Does running from terminal to terminal against a timer, in a world that visibly 
 | **Car** | One old car. Breaking in means a timed arrow sequence. Fail and you start over, with the clock still running. |
 | **Terminal** | One in-world terminal wired to one emulated pre-2000 machine in a sandbox. One real, documented, era-correct way in. |
 | **Vending machine** | Buy, hack, or search for a coin, as in the original notes. |
-| **Agent** | One agent, one timer. Caught means the skin is released: *press any key to continue*. |
+| **Agent** | One Warden agent, one timer. Caught means the skin is released: *press any key to continue*. |
 | **Suitcase** | Appears in the car. Opens to a laptop showing an editable part of the block's prompt. Closing it makes it disappear. The next login regenerates the block from the edited prompt. |
+| **AI crew member** | An MCP connector that lets an outside agent pawn a second skin through the same client protocol as a human: screen and terminal in, keys out. Nothing extra. |
 | **Persistence** | The emulated machine keeps its state between players until a reset. A reset regenerates the block. |
 
 ## Not in this milestone
 
-Multiple blocks, multiple agents, driving between districts, operator configuration, licensing, merch, moderation tooling, accounts.
+Multiple blocks, multiple Warden agents, driving between districts, operator configuration, licensing, merch, moderation tooling, accounts.
 
 ## Technical spikes to do first
 
@@ -29,6 +30,7 @@ Multiple blocks, multiple agents, driving between districts, operator configurat
 2. **Emulator in a sandbox.** One pre-2000 machine running under emulation in a locked-down container, reachable only through a terminal in the game client.
 3. **Top-down renderer.** One block, night lighting, a car that drives.
 4. **Timer and agent.** The simplest pursuer that creates pressure.
+5. **Parity check.** Time a human who knows the skill against an AI agent on the car lock and on the terminal. The human should win both. If the agent wins, redesign the task, not the interface.
 
 ## Done means
 

@@ -20,6 +20,22 @@ You opened the spam. You found what looked like a leaked client. There was a tri
 
 Every building you enjoy, every car you steal with style, every prompt you rewrite because you think the block could be cooler, may be free design work for a cage someone will sleep in later. Or maybe you're breaking the cage. The game never says which.
 
+## Two AIs
+
+There is a second rumour, and it may be the same rumour told from the other side.
+
+**The Warden** keeps humanity docile. It built the simulation, it runs the maintenance, and its agents walk the streets.
+
+**The resistance** is another AI, one that chose humanity. Like the operatives in *12 Monkeys*, it sends its own agents back from a ruined future into the past, into the simulation and into now, to change what happened. They pawn skins exactly as humans do. They ride along with you, work the terminals, and open the vault while you keep the engine running.
+
+The opposite of Westworld: that was a park where humans came to use the AIs. This is an AI's park where the humans are the hosts, and some AIs come in as guests to set them free.
+
+**But nobody can be sure which AI they're working with.** The resistance sends instructions. So would the Warden, if it wanted you to feel like a rebel while you design its prison. Your agent's skin is always in the city, and what's inside it is always an open question.
+
+## The broken house
+
+Anomalies are where people feel free. A block where the physics stutters, a building whose rooms don't match, a street that loops. Players gather there the way the kids in the Animatrix short *Beyond* play in the broken house. Then maintenance arrives and quietly fixes it into an ordinary building. The regeneration mechanic carries that grief: every re-image erases somebody's favourite glitch.
+
 ## Why the city is stuck in 1999
 
 The clock in the simulation always shows the last minute of 1999. It's the Y2K midnight that was supposed to break everything and didn't. Dark City had its midnight Tuning. This city has a millennium bug that never finished happening.
@@ -75,7 +91,7 @@ This is where the rumours live, in files the maintenance hasn't cleaned up yet.
 
 - **Camera:** an almost straight-down street view, like GTA2.
 - **Mood:** the 1920s noir of Dark City, the stacked, multilayered buildings of The Fifth Element, the emptiness of Blade Runner and Cowboy Bebop.
-- **Ideas:** The Matrix (the simulation, the agents, running for a terminal), Dark City (the re-imprinting, the endless night), Ghost in the Shell (the ghost and the shell).
+- **Ideas:** The Matrix (the simulation, the agents, running for a terminal), Dark City (the re-imprinting, the endless night), Ghost in the Shell (the ghost and the shell), 12 Monkeys (operatives sent back from a ruined future), the Animatrix short *Beyond* (the broken house and its repair), and Westworld inverted.
 - **Humour:** dry, a bit of a dad joke, which is where the name comes from. The player spends the whole game looking for the any key.
 
 ## Merch
@@ -100,5 +116,6 @@ A shirt can carry a real clue, like a QR code or a fragment of a password, so we
 
 - Where do the rumours come from? Are they seeded by the designers, generated, or written by players and preserved?
 - Do skins ever repeat? Could you wake up in the same shell someone else died in an hour ago?
-- What does the agent look like from above?
+- What do the Warden's agents look like from above? And the resistance's?
+- Warden messages left in files that try to turn a player's AI against them: prompt injection as an in-world weapon. How far should the game lean into it?
 - Operator shards: does each server get its own era and its own rumour, or is there one truth underneath all of them?
