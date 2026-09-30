@@ -1,7 +1,7 @@
 // The player's drone. It circles its aim point on its own, the way a
 // surveillance drone holds an orbit over a target. By default it is locked
-// on to something (the car) and follows it; dragging breaks the lock to look
-// around, F locks back on. Q and E steer the orbit, scroll zooms.
+// on to the player (car or skin) and follows; dragging breaks the lock to
+// look around, F locks back on. Z and X steer the orbit, scroll zooms.
 
 import * as THREE from 'three';
 
@@ -94,13 +94,14 @@ export class DroneControl {
       this.target.x += (ax - this.target.x) * ease;
       this.target.y += (az - this.target.y) * ease;
       // The faster the car, the higher the drone climbs to keep the road ahead in view.
-      const want = Math.abs(t.speed ?? 0) * (this.entry.climbPerSpeed ?? 0);
+      // On foot the drone comes down closer; in a car it climbs with speed.
+      const want = t.foot ? -this.entry.altitude * 0.4 : Math.abs(t.speed ?? 0) * (this.entry.climbPerSpeed ?? 0);
       this.climb += (want - this.climb) * (1 - Math.exp(-dt * 1.2));
     } else {
       this.climb += (0 - this.climb) * (1 - Math.exp(-dt * 1.2));
     }
-    if (k.has('q')) this.theta -= 0.8 * dt;
-    if (k.has('e')) this.theta += 0.8 * dt;
+    if (k.has('z')) this.theta -= 0.8 * dt;
+    if (k.has('x')) this.theta += 0.8 * dt;
     if (k.has('+') || k.has('=')) this.zoom(Math.exp(-1.2 * dt));
     if (k.has('-') || k.has('_')) this.zoom(Math.exp(1.2 * dt));
   }

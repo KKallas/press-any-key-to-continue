@@ -51,7 +51,24 @@ Without an LLM, or if its answer is unusable, a heuristic does the same job: tal
 
 `--overwrite` redoes heights set earlier (never the map's own), and `--empty` sets the share of empty plots.
 
-## 4. Edit in Blender
+## 4. Doors and alleys
+
+`build` runs this for you. Run it again after editing in Blender:
+
+```bash
+python3 citygen.py access city.json
+```
+
+Every building has to be reachable on foot from the street through at least one door:
+
+- While cutting plots, some early cuts leave an **alley** behind: a 2.4 to 3.6 m lane through the block.
+- The walkable space is everything that isn't a building, with half a metre of clearance. Only the pieces of it that touch a road count.
+- Each building gets a **door** on a wall that faces reachable space: on the street if it can, otherwise on an alley or a yard, and sometimes a second or third door.
+- A building that's still boxed in gets an alley carved to it through whatever stands in the way.
+
+Doors are stored with each plot as hotzones (`x`, `z`, outward normal `nx`, `nz`, and `kind`: street, alley or yard). The engine lights them on the facade and shows them on the HUD. The sample city has 350 doors on 229 buildings, and the engine confirms every building can be walked to from the start.
+
+## 5. Edit in Blender
 
 Install [`tools/blender/pak_city.py`](../tools/blender/pak_city.py) through *Edit > Preferences > Add-ons > Install from Disk*. The panel is in the 3D view's sidebar (`N`), tab **PAK City**.
 
@@ -60,15 +77,17 @@ Install [`tools/blender/pak_city.py`](../tools/blender/pak_city.py) through *Edi
 - **Change a height**: scale a plot in Z, move its top, or select plots and use **Set Height**. 0 leaves a plot empty.
 - **Edit a prompt or seed**: select a plot; the fields are in the panel and under Object Properties > Custom Properties.
 - **Make Plot** turns any mesh you model into a new plot. Its lowest face is the footprint.
-- **Export City** writes it all back. New and duplicated plots get fresh ids, never one a deleted plot used, because the engine treats an id as the same building. A reshaped block gets its lot worked out again. A plot moved into another block joins it.
+- **Export City** writes it all back. Plots that weren't reshaped keep their doors. Reshaped or new plots need `citygen.py access` again, and the export tells you how many.
+- New and duplicated plots get fresh ids, never one a deleted plot used, because the engine treats an id as the same building. A reshaped block gets its lot worked out again. A plot moved into another block joins it.
 
-Blocks decide where the car can drive: everything outside a block is road. Roads only give road markings and lamp positions, so reshape blocks to change the street layout.
+Blocks decide where the tarmac is: everything outside a block is road, and the car is faster there. Buildings and posts are the only barriers. Roads only give road markings and lamp positions, so reshape blocks to change the street layout.
 
-## 5. The engine populates it
+## 6. The engine populates it
 
 Put the file at `client/cities/<name>.json` (the engine loads `west-oakland` for now) and open the client. The engine:
 
 - raises each block as a sidewalk slab with its lot inside, and treats the gaps as road
+- builds collision from building footprints and posts only, with one map for the car and a finer one for a person
 - paints road markings along the roads and places streetlamps on the kerbs
 - grows an Art Deco building on every plot with a height, merged per block so the whole city costs a handful of draw calls per block
 - adds the buildings' outlines to the drone's HUD
@@ -116,10 +135,11 @@ Coordinates are metres, X east, Z south, origin at the centre of the area. Polyg
                "character": "stepped Art Deco towers ...", "height_range": [14, 35] }],
   "plots":  [{ "id": "p0001", "block": "k001", "footprint": [...], "height": 23.2,
                "source": "osm | generated | manual", "osm": "123", "name": null,
-               "prompt": "...", "seed": 12345, "style": { } }]
+               "prompt": "...", "seed": 12345, "style": { },
+               "doors": [{ "x": 12.4, "z": -3.1, "nx": 0, "nz": 1, "kind": "street | alley | yard" }] }]
 }
 ```
 
 ## Sample
 
-[`client/cities/west-oakland.json`](../client/cities/west-oakland.json) comes from the small West Oakland extract in the osmnx project's test data: 20 roads, 15 blocks, 252 plots, 20 of them real footprints. Heights are from the heuristic. Run it through an LLM for a skyline with some intent.
+[`client/cities/west-oakland.json`](../client/cities/west-oakland.json) comes from the small West Oakland extract in the osmnx project's test data: 20 roads, 15 blocks, 245 plots (20 of them real footprints), 350 doors. Heights are from the heuristic. Run it through an LLM for a skyline with some intent.

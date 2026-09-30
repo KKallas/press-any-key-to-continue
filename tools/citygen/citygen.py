@@ -13,6 +13,9 @@ Steps (each is a subcommand, so you can stop, edit in Blender, and go on):
     heights  fill in heights OpenStreetMap doesn't know: an LLM marks
              each block's height range and character, or a heuristic
              does it when no LLM is available
+    access   make sure every building can be walked to from the street,
+             carving alleys where needed, and place its doors (build runs
+             this for you; run it again after editing in Blender)
 
 Examples:
 
@@ -20,6 +23,7 @@ Examples:
     python3 citygen.py build area.osm --out city.json --name "Old Town"
     python3 citygen.py heights city.json --llm http://localhost:11434/v1 --model qwen2.5
     python3 citygen.py heights city.json --heuristic
+    python3 citygen.py access city.json
 
 Coordinates in city.json are metres: X east, Z south, origin at the centre
 of the area. Polygons are lists of [x, z] points, exterior ring only.
@@ -39,9 +43,9 @@ import xml.etree.ElementTree as ET
 
 try:
     from shapely import make_valid
-    from shapely.geometry import LineString, MultiPolygon, Polygon, box
+    from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
     from shapely.geometry.polygon import orient
-    from shapely.ops import split, unary_union
+    from shapely.ops import nearest_points, split, unary_union
 except ImportError:  # pragma: no cover
     sys.exit("citygen needs shapely:  pip install shapely")
 
@@ -61,6 +65,9 @@ PLOT_MAX_AREA = 520.0   # empty land is cut until plots are this small
 PLOT_MIN_AREA = 45.0
 PLOT_GAP = 0.8          # metres between neighbouring generated buildings
 LEVEL_HEIGHT = 3.3
+ALLEY_CHANCE = 0.35     # share of early cuts that leave an alley behind
+ALLEY_WIDTH = (2.4, 3.6)
+WALK_CLEAR = 0.45       # half the narrowest gap a person can walk through
 
 
 # ---------------------------------------------------------------- fetch ---
@@ -187,6 +194,11 @@ def subdivide(poly, rng, depth=0):
         return [poly]
     if len(parts) < 2:
         return [poly]
+    # Early cuts sometimes leave an alley behind: service lanes and
+    # passages running through the block to the street.
+    if depth <= 3 and rng.random() < ALLEY_CHANCE:
+        lane = cut.buffer(rng.uniform(*ALLEY_WIDTH) / 2, cap_style="flat")
+        parts = [q for p in parts for q in polys_of(p.difference(lane))]
     out = []
     for p in parts:
         out += subdivide(p, rng, depth + 1)
@@ -313,11 +325,130 @@ def cmd_build(args):
                     "roads": b["roads"], "character": ""} for b in blocks],
         "plots": plots,
     }
+    carved, doors = ensure_access(city, rng)
     save(city, args.out)
+    print(f"Access: {doors} doors, {carved} alleys carved to reach boxed-in buildings")
     known = sum(1 for p in plots if p["height"] is not None)
     print(f"{len(roads)} roads, {len(blocks)} blocks, {len(plots)} plots "
           f"({sum(1 for p in plots if p['source'] == 'osm')} from the map, {known} with known height)")
     print(f"Wrote {args.out}. Next: python3 citygen.py heights {args.out}")
+
+
+# --------------------------------------------------------------- access ---
+
+def road_space_of(city):
+    return unary_union([LineString(r["points"]).buffer(r["width"] / 2, cap_style="flat", join_style="round")
+                        for r in city["roads"] if len(r["points"]) >= 2])
+
+
+def reachable_space(city, footprints, roads):
+    """Where a person can walk to from the street: everything that isn't a
+    building (with a little clearance), in pieces that touch a road."""
+    b = city["bounds"]
+    area = box(b["minX"], b["minZ"], b["maxX"], b["maxZ"])
+    walls = unary_union([f.buffer(WALK_CLEAR, join_style="mitre") for f in footprints if not f.is_empty])
+    pieces = polys_of(area.difference(walls))
+    return unary_union([p for p in pieces if p.intersects(roads)])
+
+
+def door_candidates(fp, reach, roads):
+    """Facade points you can reach, one per long enough edge, best first."""
+    fp = orient(fp, 1.0)
+    pts = list(fp.exterior.coords)[:-1]
+    out = []
+    for i in range(len(pts)):
+        (ax, az), (bx, bz) = pts[i], pts[(i + 1) % len(pts)]
+        L = math.hypot(bx - ax, bz - az)
+        if L < 2.2:
+            continue
+        nx, nz = (bz - az) / L, -(bx - ax) / L  # outward for a counter-clockwise ring
+        # Try spots along the wall, middle first: a wall can be reachable
+        # along only part of its length (the end of an alley, a gap).
+        n = max(1, int((L - 2.0) / 1.2))
+        ts = sorted((0.5 if n == 1 else (1.0 + k * (L - 2.0) / (n - 1)) / L for k in range(n)), key=lambda t: abs(t - 0.5))
+        spot = None
+        for t in ts:
+            mx, mz = ax + (bx - ax) * t, az + (bz - az) * t
+            probe = Point(mx + nx * (WALK_CLEAR + 0.4), mz + nz * (WALK_CLEAR + 0.4))
+            if reach.contains(probe):
+                spot = (mx, mz, probe)
+                break
+        if spot is None:
+            continue
+        mx, mz, probe = spot
+        street = roads.distance(probe) < SIDEWALK + 1.5
+        out.append({"x": round(mx, 2), "z": round(mz, 2), "nx": round(nx, 3), "nz": round(nz, 3),
+                    "kind": "street" if street else "alley", "_score": (0 if street else 1, -L)})
+    out.sort(key=lambda d: d["_score"])
+    if not out and fp.distance(reach) <= WALK_CLEAR + 0.1:
+        # Open space only touches a corner: the door goes where it touches.
+        a, _ = nearest_points(fp.exterior, reach)
+        best = min(range(len(pts)), key=lambda i: LineString([pts[i], pts[(i + 1) % len(pts)]]).distance(a))
+        (ax, az), (bx, bz) = pts[best], pts[(best + 1) % len(pts)]
+        L = math.hypot(bx - ax, bz - az) or 1
+        nx, nz = (bz - az) / L, -(bx - ax) / L
+        out.append({"x": round(a.x, 2), "z": round(a.y, 2), "nx": round(nx, 3), "nz": round(nz, 3),
+                    "kind": "yard", "_score": (2, 0)})
+    return out
+
+
+def ensure_access(city, rng, passes=4):
+    """Every building gets at least one door that can be walked to from the
+    street. A boxed-in building gets an alley carved to it through whatever
+    stands in the way. Returns (alleys carved, doors placed)."""
+    roads = road_space_of(city)
+    plots = city["plots"]
+    fps = [make_valid(Polygon(p["footprint"])) if len(p["footprint"]) >= 3 else Polygon() for p in plots]
+    fps = [max(polys_of(f), key=lambda q: q.area) if polys_of(f) else Polygon() for f in fps]
+    carved = 0
+    for _ in range(passes):
+        reach = reachable_space(city, fps, roads)
+        stuck = [i for i, f in enumerate(fps) if not f.is_empty and not door_candidates(f, reach, roads)]
+        if not stuck:
+            break
+        for i in stuck:
+            f = fps[i]
+            if f.is_empty:
+                continue
+            a, b = nearest_points(f.exterior, reach)
+            L = math.hypot(b.x - a.x, b.y - a.y) or 1
+            ux, uz = (b.x - a.x) / L, (b.y - a.y) / L
+            path = LineString([(a.x - ux * 0.5, a.y - uz * 0.5), (b.x + ux * 1.5, b.y + uz * 1.5)])
+            lane = path.buffer(1.3, cap_style="flat")
+            for j, g in enumerate(fps):
+                if j != i and not g.is_empty and g.intersects(lane):
+                    rest = polys_of(g.difference(lane))
+                    fps[j] = max(rest, key=lambda q: q.area) if rest and max(q.area for q in rest) > PLOT_MIN_AREA else Polygon()
+            carved += 1
+    reach = reachable_space(city, fps, roads)
+    kept, doors = [], 0
+    for p, f in zip(plots, fps):
+        if f.is_empty or f.area < 12:
+            continue  # carved away entirely
+        p["footprint"] = ring(f)
+        cands = door_candidates(Polygon(p["footprint"]), reach, roads)
+        chosen = cands[:1]
+        for c in cands[1:]:
+            if len(chosen) < 3 and rng.random() < 0.3 and all(math.hypot(c["x"] - d["x"], c["z"] - d["z"]) > 6 for d in chosen):
+                chosen.append(c)
+        for c in chosen:
+            c.pop("_score", None)
+        p["doors"] = chosen
+        doors += len(chosen)
+        kept.append(p)
+    city["plots"] = kept
+    unreachable = sum(1 for p in kept if not p["doors"])
+    if unreachable:
+        print(f"  {unreachable} buildings still have no reachable door; check them in Blender")
+    return carved, doors
+
+
+def cmd_access(args):
+    city = load(args.city)
+    carved, doors = ensure_access(city, random.Random(args.seed))
+    city.pop("needs_access", None)
+    save(city, args.out or args.city)
+    print(f"Access: {doors} doors, {carved} alleys carved. Wrote {args.out or args.city}")
 
 
 # -------------------------------------------------------------- heights ---
@@ -488,6 +619,12 @@ def main():
     h.add_argument("--timeout", type=float, default=120)
     h.add_argument("--seed", type=int, default=1999)
     h.set_defaults(fn=cmd_heights)
+
+    a = sub.add_parser("access", help="doors for every building, alleys where needed")
+    a.add_argument("city")
+    a.add_argument("--out")
+    a.add_argument("--seed", type=int, default=1999)
+    a.set_defaults(fn=cmd_access)
 
     args = ap.parse_args()
     args.fn(args)

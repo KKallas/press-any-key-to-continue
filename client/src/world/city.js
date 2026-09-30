@@ -63,7 +63,8 @@ export function cityToEvents(city) {
   for (const p of city.plots) {
     if (!p.height) continue;
     if (!byBlock.has(p.block)) byBlock.set(p.block, []);
-    byBlock.get(p.block).push({ id: p.id, footprint: p.footprint, height: p.height, seed: p.seed, prompt: p.prompt, style: p.style });
+    byBlock.get(p.block).push({ id: p.id, footprint: p.footprint, height: p.height, seed: p.seed, prompt: p.prompt,
+      style: p.style, doors: p.doors ?? [] });
   }
   for (const [block, plots] of byBlock) {
     events.push({ t: 0, block: B, type: 'spawn', kind: 'deco-block', id: `bld-${block}`, props: { block, plots } });

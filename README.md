@@ -106,7 +106,7 @@ Grew out of an earlier concept doc, *Uber Runner* (2024), about a gig courier in
 
 ![CAM 14, hacked](docs/cam14-block01.png)
 
-Engine core: a real street map (West Oakland, from OpenStreetMap) populated with generated Art Deco buildings, in the rain. You drive the red car and watch from a drone that circles and tracks it, with a green tactical overlay over the degraded video. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
+Engine core: a real street map (West Oakland, from OpenStreetMap) populated with generated Art Deco buildings, in the rain. Drive anywhere there's room, get out and walk the alleys, and every building has a door you can reach. You drive the red car and watch from a drone that circles and tracks it, with a green tactical overlay over the degraded video. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
 
 ## License
 

@@ -395,6 +395,15 @@ function building(plot, B) {
         Math.atan2(-(b[1] - a[1]), b[0] - a[0]), neon);
     }
   }
+  // Ways in: a lit doorway under a small canopy. Street doors burn warmer
+  // and brighter than the ones down the alleys.
+  for (const d of plot.doors ?? []) {
+    const ang = Math.atan2(d.nx, d.nz); // box width along the wall, depth along the normal
+    const warm = d.kind === 'street' ? new THREE.Color(0.32, 0.22, 0.12) : new THREE.Color(0.16, 0.12, 0.08);
+    B.glow.box(d.x + d.nx * 0.04, GROUND + 1.15, d.z + d.nz * 0.04, 1.3, 2.3, 0.06, ang, warm);
+    B.trim.box(d.x + d.nx * 0.45, GROUND + 2.55, d.z + d.nz * 0.45, 1.9, 0.12, 0.9, ang, trim);
+  }
+
   // Aviation light on the tall ones.
   if (H > 45) {
     B.glow.box(ctr[0], top + 0.4, ctr[1], 0.35, 0.35, 0.35, 0, new THREE.Color(1, 0.05, 0.05));

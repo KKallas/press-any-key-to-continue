@@ -8,9 +8,11 @@ import { Rain } from '../engine/rain.js';
 import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 import { buildDecoBlock } from './deco.js';
+import { collisionMap } from '../engine/collision.js';
 
-// Drivable area of a generated city as a bitmap, 2 px per metre: the blocks
-// (with a margin for the car's body) are painted solid, everything else is road.
+// Road surface of a generated city as a bitmap, 2 px per metre: the blocks
+// are painted solid, everything else is tarmac. Not a barrier: the car can
+// climb a kerb, it just goes slower off the road.
 function drivableMask(bounds, blocks, margin) {
   const ppm = 2;
   const w = Math.ceil((bounds.maxX - bounds.minX) * ppm);
@@ -58,6 +60,10 @@ export class World {
     // What the targeting system knows: line segments for the drone's HUD.
     this.overlaySegments = [];
     this.blocks = [];
+    // Physical barriers (building footprints, posts) and ways in (doors).
+    this.obstacles = [];
+    this.posts = [];
+    this.doors = [];
 
     // Cold fill from a sky nobody has written yet.
     this.scene.add(new THREE.HemisphereLight(0x4a7480, 0x080808, 2.2));
@@ -76,6 +82,10 @@ export class World {
         return this.despawn(event.id);
       case 'move':
         return this.move(event);
+      case 'enter':
+      case 'exit':
+        // Interiors come later; for now the skin just disappears inside.
+        return this.move({ id: event.id, props: { ...event.props, visible: event.type === 'exit' } });
       default:
         console.warn('Unknown event', event);
     }
@@ -115,9 +125,8 @@ export class World {
       this.roads = { list: props.roads, half: props.roadWidth / 2, edge: props.size / 2, bounds: props.bounds };
       const { list, half, edge } = this.roads;
       const m = half - 1.1;
-      this.drivable = (x, z) =>
-        Math.abs(x) < edge - 2 && Math.abs(z) < edge - 2 &&
-        (list.some((q) => Math.abs(x - q) < m) || list.some((q) => Math.abs(z - q) < m));
+      this.surface = (x, z) => list.some((q) => Math.abs(x - q) < m) || list.some((q) => Math.abs(z - q) < m);
+      this.bounds = { minX: -edge, maxX: edge, minZ: -edge, maxZ: edge };
       this.limit = edge - 10;
       this.overlaySegments.push(...blockOutlines(props.roads, props.roadWidth / 2));
       const r = props.roads;
@@ -136,7 +145,8 @@ export class World {
       const size = 2 * Math.max(Math.abs(b.minX), Math.abs(b.maxX), Math.abs(b.minZ), Math.abs(b.maxZ)) + 40;
       this.street = createStreet({ size, roadWidth: 10, markings: roadMarkingsTexture(size, props.roads, props.seed) });
       this.scene.add(this.street.group);
-      this.drivable = drivableMask(b, props.blocks, 1.1);
+      this.surface = drivableMask(b, props.blocks, 0);
+      this.bounds = b;
       this.limit = Math.max(b.maxX, b.maxZ, -b.minX, -b.minZ) - 10;
       props.blocks.forEach((blk, i) => {
         const pts = blk.polygon;
@@ -152,6 +162,12 @@ export class World {
     }
 
     if (kind === 'deco-block') {
+      for (const p of props.plots) {
+        this.obstacles.push(p.footprint);
+        for (const d of p.doors ?? []) {
+          this.doors.push({ plot: p.id, ...d, hx: d.x + d.nx * 1.3, hz: d.z + d.nz * 1.3 });
+        }
+      }
       const built = buildDecoBlock(props.plots);
       built.overlayStart = this.overlaySegments.length;
       this.overlaySegments.push(...built.outline);
@@ -168,7 +184,13 @@ export class World {
     }
     const built = make(props);
     this.scene.add(built.object);
-    if (kind === 'building') this.overlaySegments.push(...buildingOutline(props));
+    if (kind === 'building') {
+      this.overlaySegments.push(...buildingOutline(props));
+      const { x, z, w, d } = props;
+      this.obstacles.push([[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x + w / 2, z + d / 2], [x - w / 2, z + d / 2]]);
+    }
+    if (kind === 'lamp' || kind === 'traffic-light') this.posts.push({ x: props.x, z: props.z, r: 0.2 });
+    if (kind === 'terminal') this.posts.push({ x: props.x, z: props.z, r: 0.6 });
     if (built.update) this.updaters.push(built.update);
     if (built.rainLights) {
       this.rainLights.push(...built.rainLights);
@@ -188,8 +210,18 @@ export class World {
     if (!e) return;
     e.object.position.x = props.x;
     e.object.position.z = props.z;
-    e.object.rotation.y = props.heading;
-    e.state = props;
+    if (props.heading !== undefined) e.object.rotation.y = props.heading;
+    // Up on the kerb when off the road.
+    if (this.surface) e.object.position.y = this.surface(props.x, props.z) ? 0 : 0.15;
+    if (props.visible !== undefined) e.object.visible = props.visible;
+    e.state = { ...e.state, ...props };
+  }
+
+  // Once every spawn has arrived: what stops a car, and what stops a person.
+  finalize() {
+    const b = this.bounds;
+    this.carFree = collisionMap(b, this.obstacles, this.posts, 1.1, 2);
+    this.footFree = collisionMap(b, this.obstacles, this.posts, 0.3, 4);
   }
 
   despawn(id) {

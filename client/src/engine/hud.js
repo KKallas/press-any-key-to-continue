@@ -107,9 +107,27 @@ export class Hud {
     }
     g.globalAlpha = 1;
 
-    // Tracking box on the car, sized to the car as seen from up here.
+    // Hotzones: doors within walking range, as small ground marks. The one
+    // in reach gets a full bracket.
+    g.lineWidth = 1.5 * k;
+    for (const d of s.doors ?? []) {
+      if (!this.toPx([d.hx, 0.2, d.hz], s.camera, a)) continue;
+      const on = d === s.activeDoor;
+      const r = (on ? 9 : 4) * k;
+      g.globalAlpha = on ? 1 : d.kind === 'street' ? 0.75 : 0.5;
+      g.strokeRect(a.x - r, a.y - r, r * 2, r * 2);
+      if (on) {
+        g.beginPath();
+        g.moveTo(a.x - r - 5 * k, a.y); g.lineTo(a.x - r, a.y);
+        g.moveTo(a.x + r, a.y); g.lineTo(a.x + r + 5 * k, a.y);
+        g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
+
+    // Tracking box on the car or skin, sized to it as seen from up here.
     if (s.track && this.toPx(s.track.pos, s.camera, a)) {
-      this.w.set(3, 0, 0).applyQuaternion(s.camera.quaternion);
+      this.w.set(s.track.size ?? 3, 0, 0).applyQuaternion(s.camera.quaternion);
       const p2 = [s.track.pos[0] + this.w.x, s.track.pos[1] + this.w.y, s.track.pos[2] + this.w.z];
       this.toPx(p2, s.camera, b);
       const r = Math.max(16 * k, Math.abs(b.x - a.x));
@@ -127,6 +145,7 @@ export class Hud {
       g.font = font(20);
       g.textAlign = 'left';
       g.fillText(s.track.label, a.x + r + 8 * k, a.y - r + 4 * k);
+      if (s.prompt) g.fillText(s.prompt, a.x + r + 8 * k, a.y - r + 26 * k);
     }
 
     // Fixed symbology: crosshair, frame brackets, heading tape, text.

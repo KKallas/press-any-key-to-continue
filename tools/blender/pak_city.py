@@ -13,6 +13,9 @@ What you can do:
   - edit a plot's prompt or seed in Object Properties > Custom Properties
   - turn any flat or extruded mesh into a new plot with Make Plot
 
+After reshaping plots or blocks, run `citygen.py access city.json` to
+re-check that every building can be walked to and to place doors again.
+
 What the engine does with it: every plot with a height gets an Art Deco
 building grown from its footprint, height, seed and prompt. Blocks decide
 where the car can drive (everything outside a block is road). Roads give
@@ -191,6 +194,8 @@ def build_plot(plot, coll, mats):
     obj["pak_osm"] = plot.get("osm") or ""
     obj["pak_name"] = plot.get("name") or ""
     obj["pak_style"] = json.dumps(plot["style"]) if plot.get("style") else ""
+    obj["pak_doors"] = json.dumps(plot.get("doors") or [])
+    obj["pak_footprint"] = json.dumps(plot["footprint"])  # to spot reshaped plots on export
     me.materials.append(mats["osm"] if plot.get("source") == "osm" else mats["plot"] if h else mats["empty"])
     return obj
 
@@ -264,6 +269,7 @@ def export_city(path):
 
     roads, blocks, plots = [], [], []
     seen = set()
+    needs_access = 0
     objs = sorted(root.all_objects, key=lambda o: o.name)
     for obj in objs:
         kind = obj.get("pak_kind")
@@ -297,12 +303,18 @@ def export_city(path):
                 obj["pak_seed"] = random.randrange(1, 2**31)
             seen.add(pid)
             style = obj.get("pak_style") or ""
+            # Doors stay valid while the footprint does; a reshaped or new
+            # plot needs `citygen.py access` to place them again.
+            doors = json.loads(obj.get("pak_doors", "[]")) if json.dumps(poly) == obj.get("pak_footprint") else []
+            if not doors:
+                needs_access += 1
             plots.append({
                 "id": pid, "block": obj.get("pak_block") or "", "footprint": poly,
                 "height": round(h, 1) if h > 0.3 else 0,
                 "source": obj.get("pak_source", "generated"), "osm": obj.get("pak_osm") or None,
                 "name": obj.get("pak_name") or None, "prompt": obj.get("pak_prompt", ""),
-                "seed": int(obj.get("pak_seed", 1)), **({"style": json.loads(style)} if style else {}),
+                "seed": int(obj.get("pak_seed", 1)), "doors": doors,
+                **({"style": json.loads(style)} if style else {}),
             })
 
     # A plot that moved to another block follows it.
@@ -315,6 +327,7 @@ def export_city(path):
                 break
 
     city["roads"], city["blocks"], city["plots"] = roads, blocks, plots
+    city["needs_access"] = needs_access
     with open(path, "w", encoding="utf-8") as f:
         json.dump(city, f, separators=(",", ":"))
     return city
@@ -360,7 +373,10 @@ class PAK_OT_export_city(bpy.types.Operator, ExportHelper):
         except RuntimeError as e:
             self.report({"ERROR"}, str(e))
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Exported {len(city['plots'])} plots to {self.filepath}")
+        msg = f"Exported {len(city['plots'])} plots to {self.filepath}"
+        if city.get("needs_access"):
+            msg += f". {city['needs_access']} reshaped or new plots need doors: run citygen.py access"
+        self.report({"INFO"}, msg)
         return {"FINISHED"}
 
 

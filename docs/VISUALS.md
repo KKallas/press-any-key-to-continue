@@ -79,6 +79,8 @@ The LLM generator configures modular pieces rather than inventing meshes, which 
 
 **Tracking.** The drone locks on to the car you drive, with a tracking box and ground speed, and leads it slightly. Drag to look away (the mode reads FREE), `F` to lock back on (TRACK).
 
+**On foot and through doors.** Nothing but physical barriers stops you. The car goes anywhere there's room: roads, sidewalks, empty lots, alleys wide enough. Only buildings and posts stop it, and kerbs and paving just slow it down. `E` gets the skin out, and on foot it slips down alleys the car can't. Every building has at least one door, marked as a hotzone on the HUD and lit on the facade. At a door, `E` goes inside. Interiors come later; for now the skin disappears into the building and the server logs the visit. The drone comes down closer while you're on foot.
+
 **Driving.** Four blocks in a 2x2 grid, ringed by roads that run on past the city into empty lots. The car stays on the roads and scrapes along kerbs. Steering is relative to the car, so it stays right as the drone circles. Movement goes through the server as transient events: the client simulates, sends, and draws the car only when the event comes back, so the same path works over a network later.
 
 **Street cameras.** The CCTV cameras are objects in the world, housings with a red tally light on lamp posts, walls and a mast, tagged on the drone feed. Hacking into them comes later, through an in-game web browser of the period. For development, `Tab` jumps into the next camera's feed and `Esc` returns to the drone.
@@ -89,11 +91,13 @@ The engine core in [`client/`](../client) draws four blocks in the rain, with pl
 
 | Input | Does |
 |---|---|
-| `W` `A` `S` `D` or arrow keys | Drive |
+| `W` `A` `S` `D` or arrow keys | Drive, or walk (on foot W is up on the screen) |
 | `Space` | Handbrake |
+| `Shift` | Run |
+| `E` or `Enter` | Get out of the car; at a door, go in; inside, come out; next to the car, get in |
 | Drag | Look around (breaks the lock) |
-| `F` | Lock the drone back on the car |
-| `Q` `E` | Steer the orbit |
+| `F` | Lock the drone back on the car or the skin |
+| `Z` `X` | Steer the orbit |
 | Scroll, `+` `-` | Zoom the drone's lens |
 | `Tab`, `Esc` | Development: into a street camera's feed, back to the drone |
 | `1` `2` `3` | Quality tier |

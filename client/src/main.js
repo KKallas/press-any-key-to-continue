@@ -12,6 +12,7 @@ import { TIERS, AutoQuality } from './engine/quality.js';
 import { DroneControl } from './engine/drone.js';
 import { CarControl } from './engine/car.js';
 import { Hud } from './engine/hud.js';
+import { WalkerControl } from './engine/walker.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,6 +52,7 @@ const { block: BLOCK, events: LOG } = await loadWorld();
 const server = new LocalServer(LOG);
 const world = new World();
 server.subscribe((e) => e.block === BLOCK, (e) => world.apply(e));
+world.finalize();
 
 const DRONE_ID = 'UAV-2';
 const drone = world.cameras.get(DRONE_ID);
@@ -58,23 +60,91 @@ const droneControl = new DroneControl(drone, canvas);
 const streetCams = [...world.cameras.values()].filter((c) => c.kind === 'camera');
 let active = drone;
 
-// The car you drive. The drone locks on to it.
+// The player is a skin: in the car, on foot, or inside a building.
+let mode = 'car';
+let insideDoor = null;
+
 const carSpawn = LOG.find((e) => e.id === 'car1').props;
 const car = new CarControl({
   server,
   block: BLOCK,
   id: 'car1',
   start: { x: carSpawn.x, z: carSpawn.z, heading: carSpawn.heading },
-  drivable: world.drivable,
+  free: world.carFree,
+  surface: world.surface,
 });
+
+// The skin's body, hidden while it sits in the car.
+server.append({ block: BLOCK, type: 'spawn', kind: 'person', id: 'skin',
+  props: { x: car.x, z: car.z, coat: '#8f8574', heading: 0 } });
+server.append({ block: BLOCK, type: 'move', transient: true, id: 'skin', props: { x: car.x, z: car.z, visible: false } });
+const walker = new WalkerControl({
+  server,
+  block: BLOCK,
+  id: 'skin',
+  free: world.footFree,
+  // Screen-up on the ground, from the drone's orbit angle.
+  up: () => [-Math.sin(droneControl.theta), -Math.cos(droneControl.theta)],
+});
+
 droneControl.limit = world.limit ?? 70;
-droneControl.lock = () => ({
-  x: car.x,
-  z: car.z,
-  vx: Math.cos(car.heading) * car.speed,
-  vz: -Math.sin(car.heading) * car.speed,
-  speed: car.speed,
-});
+droneControl.lock = () =>
+  mode === 'car'
+    ? { x: car.x, z: car.z, vx: Math.cos(car.heading) * car.speed, vz: -Math.sin(car.heading) * car.speed, speed: car.speed }
+    : { x: walker.x, z: walker.z, vx: 0, vz: 0, speed: 0, foot: true };
+
+// Doors and the car within reach of the skin, nearest first.
+const REACH_DOOR = 1.8;
+const REACH_CAR = 3.2;
+function nearestDoor() {
+  let best = null;
+  let bd = REACH_DOOR;
+  for (const d of world.doors) {
+    const dist = Math.hypot(d.hx - walker.x, d.hz - walker.z);
+    if (dist < bd) {
+      bd = dist;
+      best = d;
+    }
+  }
+  return best;
+}
+function carInReach() {
+  return Math.hypot(car.x - walker.x, car.z - walker.z) < REACH_CAR;
+}
+
+// E: out of the car, into a building, back out, back into the car.
+function use() {
+  if (mode === 'car') {
+    if (Math.abs(car.speed) > 3) return; // not while moving
+    // Out on the driver's side, or wherever there's room.
+    const side = car.heading + Math.PI / 2;
+    const placed = walker.place(car.x + Math.cos(side) * 2.2, car.z - Math.sin(side) * 2.2);
+    if (!placed) return;
+    car.occupied = false;
+    walker.active = true;
+    mode = 'foot';
+  } else if (mode === 'foot') {
+    const door = nearestDoor();
+    if (door) {
+      insideDoor = door;
+      walker.active = false;
+      mode = 'inside';
+      server.append({ block: BLOCK, type: 'enter', id: 'skin', props: { plot: door.plot, x: walker.x, z: walker.z } });
+    } else if (carInReach()) {
+      walker.active = false;
+      car.occupied = true;
+      mode = 'car';
+      server.append({ block: BLOCK, type: 'move', transient: true, id: 'skin', props: { x: car.x, z: car.z, visible: false } });
+    }
+  } else if (mode === 'inside') {
+    walker.place(insideDoor.hx, insideDoor.hz, false);
+    server.append({ block: BLOCK, type: 'exit', id: 'skin', props: { plot: insideDoor.plot, x: walker.x, z: walker.z } });
+    walker.active = true;
+    mode = 'foot';
+    insideDoor = null;
+  }
+  syncHint();
+}
 const hud = new Hud();
 
 // Quality.
@@ -154,10 +224,17 @@ function setActive(entry) {
   document.body.classList.toggle('mode-drone', entry.kind === 'drone');
   $('cam-name').textContent = entry.name;
   $('cam-desc').textContent = entry.description;
-  $('hint').textContent = entry.kind === 'drone'
-    ? 'WASD DRIVE · SPACE HANDBRAKE · DRAG TO LOOK · F TRACK CAR · Q E ORBIT · SCROLL ZOOM'
-    : 'ESC · BACK TO DRONE    TAB · NEXT CAMERA';
+  syncHint();
   rebuild();
+}
+
+function syncHint() {
+  const common = 'DRAG TO LOOK · F TRACK · Z X ORBIT · SCROLL ZOOM';
+  $('hint').textContent = active.kind !== 'drone'
+    ? 'ESC · BACK TO DRONE    TAB · NEXT CAMERA'
+    : mode === 'car' ? `WASD DRIVE · SPACE HANDBRAKE · E GET OUT · ${common}`
+    : mode === 'foot' ? `WASD WALK · SHIFT RUN · E DOOR OR CAR · ${common}`
+    : `E · LEAVE THE BUILDING · ${common}`;
 }
 
 // A plausible 1999 login, typed over the snow while the feed connects.
@@ -215,15 +292,34 @@ const hudCams = streetCams.map((c) => ({ name: c.name, pos: c.position }));
 function clockText(elapsed) {
   return `23:59:${String(Math.floor(elapsed) % 60).padStart(2, '0')}`;
 }
+function trackInfo() {
+  const tag = droneControl.locked ? 'TRK ' : '';
+  if (mode === 'car') return { pos: [car.x, 1, car.z], kmh: car.kmh, label: `${tag}CAR-1  ${car.kmh} KM/H`, size: 3 };
+  if (mode === 'foot') return { pos: [walker.x, 1, walker.z], kmh: Math.round(walker.speed * 3.6), label: `${tag}SKIN  ON FOOT`, size: 1.2 };
+  return { pos: [insideDoor.x, 1, insideDoor.z], kmh: 0, label: `${tag}SKIN  INSIDE ${insideDoor.plot.toUpperCase()}`, size: 1.6 };
+}
+
+// What E would do right now, shown next to the skin.
+function promptText() {
+  if (mode === 'car') return Math.abs(car.speed) > 3 ? '' : '[E] GET OUT';
+  if (mode === 'inside') return '[E] LEAVE';
+  const door = nearestDoor();
+  if (door) return `[E] ENTER ${door.plot.toUpperCase()}`;
+  if (carInReach()) return '[E] GET IN';
+  return '';
+}
+
 function drawHud(time) {
+  const near = mode === 'car' ? [] : world.doors.filter((d) => Math.hypot(d.hx - walker.x, d.hz - walker.z) < 45);
   hud.draw({
     camera: drone.camera,
     segments: world.overlaySegments,
     blocks: world.blocks,
     cams: hudCams,
-    track: droneControl.locked
-      ? { pos: [car.x, 1, car.z], kmh: car.kmh, label: `TRK CAR-1  ${car.kmh} KM/H` }
-      : { pos: [car.x, 1, car.z], kmh: car.kmh, label: 'CAR-1' },
+    doors: near,
+    activeDoor: mode === 'foot' ? nearestDoor() : null,
+    prompt: promptText(),
+    track: trackInfo(),
     telemetry: droneControl.telemetry(),
     name: drone.name,
     description: drone.description,
@@ -245,6 +341,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === '3') applyTier('high');
   else if (e.key === 'g' || e.key === 'G') $('grade').click();
   else if (e.key === 'Escape') backToDrone();
+  else if ((e.key === 'e' || e.key === 'E' || e.key === 'Enter') && active === drone && !e.repeat) use();
   else if (e.key === 'Tab') {
     e.preventDefault();
     nextCamera();
@@ -283,6 +380,7 @@ function frame(now) {
   const time = (now - t0) / 1000;
 
   car.update(dt / 1000);
+  walker.update(dt / 1000);
   if (active === drone) droneControl.update(dt / 1000);
   loss = Math.max(0, loss - dt / 900);
   pipeline.setLoss(loss);
@@ -318,4 +416,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { server, world, pipeline, car, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { server, world, pipeline, car, walker, use, mode: () => mode, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

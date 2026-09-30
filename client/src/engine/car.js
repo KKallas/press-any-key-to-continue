@@ -10,8 +10,9 @@ const BRAKE = 20;
 const TURN = 1.7; // radians per second at full lock, at town speed
 
 export class CarControl {
-  // drivable(x, z) -> true where the car may be.
-  constructor({ server, block, id, start, drivable }) {
+  // free(x, z): no barrier here (buildings, posts). surface(x, z): on
+  // tarmac; anywhere else is kerbs and paving, and slower going.
+  constructor({ server, block, id, start, free, surface }) {
     this.server = server;
     this.block = block;
     this.id = id;
@@ -19,7 +20,9 @@ export class CarControl {
     this.z = start.z;
     this.heading = start.heading;
     this.speed = 0;
-    this.drivable = drivable;
+    this.free = free;
+    this.surface = surface ?? (() => true);
+    this.occupied = true;
     this.keys = new Set();
     window.addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
@@ -27,11 +30,12 @@ export class CarControl {
   }
 
   onRoad(x, z) {
-    return this.drivable(x, z);
+    return this.free(x, z);
   }
 
   update(dt) {
-    const k = this.keys;
+    // An empty car rolls to a stop and ignores the keys.
+    const k = this.occupied ? this.keys : new Set();
     const up = k.has('w') || k.has('arrowup');
     const down = k.has('s') || k.has('arrowdown');
     const left = k.has('a') || k.has('arrowleft');
@@ -40,8 +44,10 @@ export class CarControl {
 
     if (up) this.speed += (this.speed < 0 ? BRAKE : ACCEL) * dt;
     if (down) this.speed -= (this.speed > 0 ? BRAKE : ACCEL * 0.6) * dt;
-    // Rolling resistance and drag.
-    const drag = (hand ? 18 : 1.5) + Math.abs(this.speed) * 0.08;
+    // Rolling resistance and drag; paving, kerbs and yards are rougher.
+    const rough = !this.surface(this.x, this.z);
+    const drag = (hand ? 18 : 1.5) + Math.abs(this.speed) * (rough ? 0.35 : 0.08);
+    if (rough && Math.abs(this.speed) > MAX_FWD * 0.55) this.speed *= 1 - 1.5 * dt;
     if (!up && !down) this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), drag * dt);
     this.speed = Math.max(-MAX_REV, Math.min(MAX_FWD, this.speed));
 
@@ -67,6 +73,7 @@ export class CarControl {
     }
 
     if (this.speed !== 0 || steer) {
+      if (!this.occupied && Math.abs(this.speed) < 0.05) this.speed = 0;
       this.server.append({
         block: this.block,
         type: 'move',
