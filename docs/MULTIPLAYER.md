@@ -47,6 +47,16 @@ This is a **chosen gesture on our own server, not a hole in it.** The server nev
 
 The token is claimed once, by the WebSocket that connects with it, and then it's spent.
 
+There's also a plain-URL door for making an account with a handle and password you choose, readable straight in a browser:
+
+```
+/?action=createuser&name=myname&passw=test   ->  {"ok":true,"created":true,"name":"myname"}
+                                                  {"ok":false,"reason":"username taken"}
+/?action=login&name=myname&passw=test         ->  {"ok":true,"name":"myname"}
+```
+
+Accounts made this way log in through the terminal the same as any other: type the handle, then the password at the key prompt.
+
 ## What crosses the wire
 
 Small and dumb on purpose.

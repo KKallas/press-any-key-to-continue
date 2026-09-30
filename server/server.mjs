@@ -110,6 +110,20 @@ function readJson(req, cb) {
 
 const httpServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://localhost');
+  // A plain-URL account door: /?action=createuser&name=..&passw=.. returns
+  // JSON you can read straight in the browser. A handle and a password you
+  // pick, so you can log back in with them.
+  const action = u.searchParams.get('action');
+  if (action === 'createuser') {
+    const r = db.createNamed(u.searchParams.get('name'), u.searchParams.get('passw') ?? u.searchParams.get('pass'));
+    if (r.error === 'taken') return end(res, 200, JSON.stringify({ ok: false, reason: 'username taken' }), 'application/json');
+    if (r.error) return end(res, 200, JSON.stringify({ ok: false, reason: r.error }), 'application/json');
+    return end(res, 200, JSON.stringify({ ok: true, created: true, name: r.handle }), 'application/json');
+  }
+  if (action === 'login') {
+    const r = loginReturning({ handle: u.searchParams.get('name'), key: u.searchParams.get('passw') ?? u.searchParams.get('pass') });
+    return end(res, 200, JSON.stringify(r.ok ? { ok: true, name: r.handle } : { ok: false, reason: r.reason }), 'application/json');
+  }
   if (u.pathname === '/api/signup' && req.method === 'POST') {
     return readJson(req, (payload) => {
       const r = signup(payload);

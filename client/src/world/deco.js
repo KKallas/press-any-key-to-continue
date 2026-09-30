@@ -434,7 +434,7 @@ function building(plot, B) {
 const METAL = new THREE.Color(0.2, 0.21, 0.22);
 const DARKMETAL = new THREE.Color(0.08, 0.08, 0.085);
 const BRICK = new THREE.Color(0.22, 0.1, 0.07);
-const PUDDLE = new THREE.Color(0.02, 0.05, 0.07); // wet sheen, faintly lit so it blooms
+const PUDDLE = new THREE.Color(0.015, 0.02, 0.028); // dark wet sheen, like the asphalt puddles
 const DECK = new THREE.Color(0.16, 0.165, 0.17); // gravel/felt, lighter than the old near-black
 const SIGN_COLORS = [
   [2.6, 0.5, 1.6], [0.4, 1.8, 2.6], [2.8, 1.2, 0.3], [2.4, 0.4, 0.5], [0.6, 2.4, 1.2],
@@ -473,7 +473,9 @@ function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, r
           const rr = rad * (0.6 + r() * 0.5);
           poly.push([p[0] + Math.cos(t) * rr, p[1] + Math.sin(t) * rr * (0.7 + r() * 0.3)]);
         }
-        if (poly.every((q) => inside(q, pts))) B.glow.cap ? B.glow.cap(poly, y + 0.03, PUDDLE) : null;
+        // Dark and glossy (the trim material catches light), so it reads as
+        // standing water the way the street puddles do — not a bright shape.
+        if (poly.every((q) => inside(q, pts))) B.trim.cap(poly, y + 0.03, PUDDLE);
       } else if (kind === 'skylight') {
         // A run of pitched glass, glowing from the floor below.
         const cols = 1 + Math.floor(r() * 3);

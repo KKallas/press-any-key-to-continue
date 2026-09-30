@@ -161,6 +161,32 @@ export function markingsTexture(size, roadWidth, roads, seed) {
 // Road markings for real, irregular streets: a dashed centre line on
 // two-way roads and a faint edge line either side. Covers a square of
 // `size` metres centred on the origin, like the street surface.
+// A road stencil: text painted on the tarmac, stretched long the way real
+// road lettering is so it reads at a low angle, aligned with the lane.
+function stencil(g, P, m, x, z, ang, text) {
+  const lines = text.split('\n');
+  g.save();
+  const c = P([x, z]);
+  g.translate(c[0], c[1]);
+  // Keep text within a readable half-turn so the drone never sees it upside
+  // down, whichever way the lane runs.
+  let a = ang + Math.PI / 2;
+  a = Math.atan2(Math.sin(a), Math.cos(a));
+  if (a > Math.PI / 2) a -= Math.PI;
+  if (a < -Math.PI / 2) a += Math.PI;
+  g.rotate(a);
+  g.scale(1, 2.1); // stretched down the road
+  g.fillStyle = '#fff';
+  g.globalAlpha = 0.5;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const px = Math.max(9, 1.9 * m);
+  g.font = `bold ${px}px "Arial Narrow", Arial, sans-serif`;
+  lines.forEach((ln, i) => g.fillText(ln, 0, (i - (lines.length - 1) / 2) * px * 1.05));
+  g.globalAlpha = 1;
+  g.restore();
+}
+
 export function roadMarkingsTexture(size, roads, seed, junctions = []) {
   const px = 2048;
   const [c, g] = canvas(px, px);
@@ -200,33 +226,55 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
     }
   }
 
-  // Parking bays: short ticks square to the kerb, in runs along the outer edge
-  // of the wider streets, kept clear of the junctions.
+  // Only real crossings — where three or more streets (or an alley and a
+  // street) meet — get pedestrian markings. A bend in a road doesn't.
+  const crossings = junctions.filter((j) => j.degree >= 3);
+  const clearRadius = (j) => Math.max(...j.arms.map((a) => a.width)) / 2 + 3;
+
+  // Wipe the centre and edge lines out of the intersection itself, so they
+  // don't run through the crossing. (Black is "no paint" in this map.)
+  g.fillStyle = '#000';
+  for (const j of crossings) {
+    const R = clearRadius(j) + 2;
+    g.beginPath();
+    const c = P([j.x, j.z]);
+    g.arc(c[0], c[1], R * m, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = '#fff';
+
+  // A helper to know how far a point is from any crossing, so bays and
+  // stencils keep clear of them.
+  const nearCrossing = (x, z, pad) => crossings.some((j) => Math.hypot(j.x - x, j.z - z) < clearRadius(j) + pad);
+
+  // Parking bays: proper car-length slots (~5.5 m) ticked square to the kerb,
+  // along the wider streets, clear of the crossings.
   g.setLineDash([]);
-  g.lineWidth = Math.max(1, 0.1 * m);
   g.globalAlpha = 0.4;
   for (const road of roads) {
-    if (road.width < 9) continue;
+    if (road.width < 12) continue; // only streets with room for a parking lane
     for (let i = 0; i < road.points.length - 1; i++) {
       const a = road.points[i];
       const b = road.points[i + 1];
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (L < 26) continue;
+      if (L < 30) continue;
       const dx = (b[0] - a[0]) / L;
       const dz = (b[1] - a[1]) / L;
       const nx = -dz;
       const nz = dx;
       for (const side of [-1, 1]) {
-        if (r() < 0.4) continue;
-        const off = road.width / 2 - 0.4;
-        const bay = 2.4;
-        for (let d = 10 + r() * 6; d < L - 10; d += bay) {
+        if (r() < 0.35) continue;
+        const off = road.width / 2 - 0.6;
+        const bay = 5.5; // a car plus a little
+        const depth = 2.6;
+        g.lineWidth = Math.max(1, 0.12 * m);
+        for (let d = 12 + r() * 6; d < L - 12; d += bay) {
           const cx0 = a[0] + dx * d + nx * off * side;
           const cz0 = a[1] + dz * d + nz * off * side;
-          const inner = 2.2;
-          g.beginPath();
+          if (nearCrossing(cx0, cz0, 4)) continue;
           const p0 = P([cx0, cz0]);
-          const p1 = P([cx0 - nx * inner * side, cz0 - nz * inner * side]);
+          const p1 = P([cx0 - nx * depth * side, cz0 - nz * depth * side]);
+          g.beginPath();
           g.moveTo(p0[0], p0[1]);
           g.lineTo(p1[0], p1[1]);
           g.stroke();
@@ -236,33 +284,56 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
   }
   g.globalAlpha = 1;
 
-  // Junctions: a zebra crossing across each arm, a stop line behind it, and a
-  // faint box-junction crosshatch in the middle where the streets meet.
-  for (const j of junctions) {
-    const R = Math.max(...j.arms.map((a) => a.width)) / 2 + 1;
+  // Painted stencils down the lanes: SLOW, BUS, a lane arrow, and WRONG WAY on
+  // the contra-flow side. Kept off the crossings.
+  const STENCILS = ['SLOW', 'BUS', 'AHEAD', 'SLOW', '20'];
+  for (const road of roads) {
+    if (road.width < 12) continue;
+    for (let i = 0; i < road.points.length - 1; i++) {
+      const a = road.points[i];
+      const b = road.points[i + 1];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 34) continue;
+      const dx = (b[0] - a[0]) / L;
+      const dz = (b[1] - a[1]) / L;
+      const ang = Math.atan2(dz, dx);
+      for (let d = 18 + r() * 10; d < L - 14; d += 26 + r() * 20) {
+        const lane = road.width / 4;
+        const side = r() < 0.5 ? 1 : -1;
+        const cx = a[0] + dx * d + -dz * lane * side;
+        const cz = a[1] + dz * d + dx * lane * side;
+        if (nearCrossing(cx, cz, 6)) continue;
+        // Now and then, WRONG WAY facing back up the lane.
+        if (r() < 0.18) stencil(g, P, m, cx, cz, ang + Math.PI, 'WRONG\nWAY');
+        else stencil(g, P, m, cx, cz, ang, STENCILS[Math.floor(r() * STENCILS.length)]);
+      }
+    }
+  }
+
+  // Junctions: a zebra crossing across each arm, and a stop line behind it.
+  for (const j of crossings) {
+    const R = clearRadius(j);
     for (const arm of j.arms) {
-      const back = R + 1.2; // clear of the middle
+      const back = R + 1.2;
       const cx = j.x + arm.dx * back;
       const cz = j.z + arm.dz * back;
       const nx = -arm.dz;
       const nz = arm.dx;
-      const half = arm.width / 2 - 0.4;
-      // Zebra: stripes laid along the direction of travel, across the road.
+      const half = arm.width / 2 - 0.6;
       const bars = Math.max(3, Math.floor(arm.width / 0.9));
       g.globalAlpha = 0.85;
       for (let s = 0; s < bars; s++) {
         const t = (s + 0.5) / bars;
         const px0 = cx + nx * (t * 2 - 1) * half;
         const pz0 = cz + nz * (t * 2 - 1) * half;
-        const q0 = P([px0 - arm.dx * 1.3, pz0 - arm.dz * 1.3]);
-        const q1 = P([px0 + arm.dx * 1.3, pz0 + arm.dz * 1.3]);
-        g.lineWidth = Math.max(1.5, 0.32 * m);
+        const q0 = P([px0 - arm.dx * 1.4, pz0 - arm.dz * 1.4]);
+        const q1 = P([px0 + arm.dx * 1.4, pz0 + arm.dz * 1.4]);
+        g.lineWidth = Math.max(1.5, 0.34 * m);
         g.beginPath();
         g.moveTo(q0[0], q0[1]);
         g.lineTo(q1[0], q1[1]);
         g.stroke();
       }
-      // Stop line just behind the crossing.
       const sx = j.x + arm.dx * (back + 1.8);
       const sz = j.z + arm.dz * (back + 1.8);
       g.lineWidth = Math.max(2, 0.4 * m);

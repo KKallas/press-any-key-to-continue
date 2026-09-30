@@ -55,9 +55,9 @@ except ImportError:  # pragma: no cover
 
 # Road classes the car can drive on, and how wide they are in metres.
 ROAD_WIDTHS = {
-    "motorway": 18, "trunk": 16, "primary": 14, "secondary": 12, "tertiary": 11,
-    "motorway_link": 8, "trunk_link": 8, "primary_link": 8, "secondary_link": 8, "tertiary_link": 8,
-    "unclassified": 9, "residential": 9, "living_street": 7, "service": 6,
+    "motorway": 26, "trunk": 24, "primary": 20, "secondary": 17, "tertiary": 15,
+    "motorway_link": 11, "trunk_link": 11, "primary_link": 11, "secondary_link": 11, "tertiary_link": 11,
+    "unclassified": 14, "residential": 14, "living_street": 11, "service": 9,
 }
 ROAD_RANK = {c: i for i, c in enumerate(
     ["motorway", "trunk", "primary", "secondary", "tertiary", "unclassified",

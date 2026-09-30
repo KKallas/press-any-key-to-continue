@@ -78,6 +78,23 @@ export class OperatorDB {
     return { handle, key, color };
   }
 
+  // Create an operator with a handle and a password the player chose (the
+  // ?action=createuser front door). The handle must be free — no silent
+  // renaming — so a taken name is told to try another.
+  createNamed(handle, password) {
+    const clean = String(handle || '').trim();
+    if (!/^[A-Za-z][A-Za-z0-9_\-]{1,15}$/.test(clean)) return { error: 'bad handle' };
+    if (!password || String(password).length < 1) return { error: 'no password' };
+    if (this.ops.has(clean.toLowerCase())) return { error: 'taken' };
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = scrypt(String(password), salt);
+    const color = COLORS[this.ops.size % COLORS.length];
+    const rec = { handle: clean, salt, hash, color, created: Date.now(), lastSeen: Date.now(), runs: 0 };
+    this.ops.set(clean.toLowerCase(), rec);
+    this.save();
+    return { handle: clean, color };
+  }
+
   // Check a returning operator's key. On success bumps their session count
   // and returns { handle, color, runs }; on failure returns null.
   verify(handle, key) {

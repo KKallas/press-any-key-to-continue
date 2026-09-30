@@ -145,7 +145,7 @@ Trees fill the parks and line the wider streets. There are trash cans by the doo
 
 ## Junctions
 
-The street network (a graph split at every crossing, the same one the car drives) tells the markings and the signals where the junctions are. Each arm of a junction gets a **zebra crossing** and a **stop line** painted into the road texture, and the wider streets carry **parking bays** ticked along the kerb between junctions. At the busier crossings a **traffic light** stands on a corner, its red, amber or green lens glowing into the wet road. The signals are set once, out of step with each other, so the city reads as alive from the drone; making them cycle, and making the car and the law obey them, comes later.
+The street network (a graph split at every crossing, the same one the car drives) tells the markings and the signals where the junctions are. Only real crossings — three or more streets meeting, or an alley onto a street — get pedestrian markings: a **zebra crossing** and a **stop line** on each arm, with the centre and edge lines wiped out of the intersection so nothing runs through the crossing. The wider streets carry car-length **parking bays** ticked along the kerb between junctions, and painted lane **stencils** — SLOW, BUS, AHEAD, a speed, and WRONG WAY on the contra-flow side — stretched down the lane the way real road lettering is. At the busier crossings a **traffic light** stands on a corner, its red, amber or green lens glowing into the wet road. The signals are set once, out of step with each other; making them cycle, and making the car and the law obey them, comes later.
 
 ## Rooftops
 
