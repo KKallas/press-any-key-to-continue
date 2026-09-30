@@ -1,0 +1,134 @@
+<title>CAM 07 Block 01</title>
+<meta name="description" content="Press Any Key to Continue: engine core. One block in the rain, seen through one surveillance camera.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<style>
+  /* Layout: one full-screen camera feed; the on-screen display is part of the camera, so it sits on the image. */
+  :root {
+    --feed-black: #030405;
+    --osd: #e9efe9;
+    --osd-dim: rgba(233, 239, 233, 0.55);
+    --rec: #ff2a2a;
+    --panel: rgba(3, 4, 5, 0.62);
+    --font-osd: "VT323", "Courier New", ui-monospace, monospace;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--feed-black);
+    color: var(--osd);
+    font-family: var(--font-osd);
+    overflow: hidden;
+  }
+  #feed {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: var(--feed-black);
+  }
+  .osd {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    font-size: clamp(18px, 2.4vw, 28px);
+    letter-spacing: 0.06em;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 1);
+  }
+  .osd-top, .osd-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .osd-bottom { align-items: flex-end; }
+  .rec { display: inline-flex; align-items: center; gap: 0.4em; }
+  .rec-dot {
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    background: var(--rec);
+    box-shadow: 0 0 8px var(--rec);
+  }
+  .rec-dot.off { opacity: 0; }
+  .clock { font-variant-numeric: tabular-nums; text-align: right; }
+  .dim { color: var(--osd-dim); }
+  .controls {
+    pointer-events: auto;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    background: var(--panel);
+    padding: 6px 8px;
+  }
+  .controls button {
+    font: inherit;
+    font-size: 0.8em;
+    letter-spacing: 0.08em;
+    color: var(--osd-dim);
+    background: transparent;
+    border: 1px solid rgba(233, 239, 233, 0.25);
+    padding: 2px 10px;
+    cursor: pointer;
+  }
+  .controls button[aria-pressed="true"] { color: var(--osd); border-color: var(--osd); }
+  .controls button:focus-visible { outline: 2px solid var(--osd); outline-offset: 2px; }
+  .stats { font-size: 0.8em; font-variant-numeric: tabular-nums; }
+  .err {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    text-align: center;
+    font-size: 26px;
+    background: var(--feed-black);
+  }
+</style>
+
+<canvas id="feed" aria-label="Surveillance camera view of a rainy street at night"></canvas>
+
+<div class="osd" aria-live="off">
+  <div class="osd-top">
+    <div>
+      <div class="rec"><span class="rec-dot" id="rec-dot"></span><span>REC</span></div>
+      <div id="cam-name">CAM 07</div>
+      <div class="dim" id="cam-desc">BLOCK 01 · N-E CORNER</div>
+    </div>
+    <div class="clock">
+      <div id="date">31.12.1999</div>
+      <div id="time">23:59:00</div>
+    </div>
+  </div>
+  <div></div>
+  <div class="osd-bottom">
+    <div class="controls" role="toolbar" aria-label="Render quality">
+      <button type="button" id="q-low" data-tier="low" aria-pressed="false">LOW</button>
+      <button type="button" id="q-mid" data-tier="mid" aria-pressed="false">MID</button>
+      <button type="button" id="q-high" data-tier="high" aria-pressed="false">HIGH</button>
+      <button type="button" id="q-auto" data-tier="auto" aria-pressed="true">AUTO</button>
+      <button type="button" id="grade" aria-pressed="true">GRADE</button>
+    </div>
+    <div class="stats dim" id="stats">-- FPS</div>
+  </div>
+</div>
+
+<div class="err" id="err" hidden>NO SIGNAL<br><span class="dim" id="err-detail"></span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="src/main.js"></script>

@@ -61,7 +61,7 @@ A player can pawn a second skin and hand it to an AI agent. Typically the human 
 
 ## Architecture (draft)
 
-- **Client:** HTML5 in the browser. Top-down 2.5D renderer, input, terminal emulator window.
+- **Client:** HTML5 in the browser, Three.js on WebGL2. The view is a surveillance camera; the client draws only what its camera can see. Engine core lives in [`client/`](client). See [`docs/VISUALS.md`](docs/VISUALS.md).
 - **Game server:** authoritative multiplayer state, agent AI, session timers.
 - **Machine farm:** emulated pre-2000 machines in hosting containers, reachable **only through the in-game terminal**. No route to the internet or the host. Snapshot-based filesystems so resets are instant and players can't undo them. Idle machines are suspended, not left running. Players will try to break out of these boxes, so the sandbox is part of the threat model (gVisor or Firecracker class isolation, not bare containers).
 - **Generator:** Qwen, which can run locally or remotely, configures generator scripts from the layered prompts.
@@ -90,6 +90,7 @@ If that loop feels uncanny, everything else is expansion. See [`docs/ONE_BLOCK.m
 
 - [`docs/LORE.md`](docs/LORE.md): the world, the rumours, the tone
 - [`docs/ONE_BLOCK.md`](docs/ONE_BLOCK.md): scope for the first playable block
+- [`docs/VISUALS.md`](docs/VISUALS.md): the camera, the look, and how the engine draws it
 
 ## Origins
 
@@ -97,7 +98,9 @@ Grew out of an earlier concept doc, *Uber Runner* (2024), about a gig courier in
 
 ## Status
 
-Concept stage. Being built with Claude Code and Codex.
+![CAM 07 looking over Block 01](docs/cam07-block01.png)
+
+Engine core: one block in the rain, seen from one camera, with placeholder models. Serve `client/` with any static web server (for example `python3 -m http.server` inside it) and open it in a browser. Being built with Claude Code and Codex.
 
 ## License
 

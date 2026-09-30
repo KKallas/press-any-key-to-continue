@@ -1,0 +1,344 @@
+// Placeholder builders, one per entity kind. Each takes the props from a
+// spawn event and returns { object, rainLights?, update? }. Shapes are
+// deliberately plain: these get replaced by generated modules later.
+
+import * as THREE from 'three';
+import { windowTexture, neonTexture, rng } from '../engine/textures.js';
+
+const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05, ...extra });
+const glow = (color, intensity) =>
+  new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(color), emissiveIntensity: intensity, roughness: 1 });
+
+// A soft additive cone: light made visible by the rain and haze.
+function lightCone(color, radius, height, strength = 0.05) {
+  const geo = new THREE.ConeGeometry(radius, height, 32, 1, true);
+  geo.translate(0, -height / 2, 0);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color) }, uStrength: { value: strength }, uHeight: { value: height } },
+    vertexShader: /* glsl */ `
+      varying float vDown;
+      varying float vFacing;
+      uniform float uHeight;
+      void main() {
+        vDown = -position.y / uHeight;
+        vec3 n = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vFacing = abs(dot(n, normalize(-mv.xyz)));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uStrength;
+      varying float vDown;
+      varying float vFacing;
+      void main() {
+        float a = pow(vFacing, 1.6) * (1.0 - vDown) * (1.0 - vDown) * uStrength;
+        gl_FragColor = vec4(uColor * a, 1.0);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 8;
+  return mesh;
+}
+
+function faceRotation([fx, fz]) {
+  return Math.atan2(fx, fz);
+}
+
+export const factories = {
+  street({ size, roadWidth, sidewalk, curb }) {
+    // The road surface itself is built by the engine (it needs the renderer
+    // for reflections). Here: the four raised sidewalk corners and kerbs.
+    const group = new THREE.Group();
+    const half = roadWidth / 2;
+    const outer = size / 2;
+    const concrete = std(0x2a2c2e, { roughness: 0.45 });
+    const lotMat = std(0x0c0d0e, { roughness: 0.9 });
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const w = outer - half;
+        // Sidewalk slab covering the whole corner lot; buildings stand on it.
+        const slab = new THREE.Mesh(box(w, curb, w), concrete);
+        slab.position.set(sx * (half + w / 2), curb / 2, sz * (half + w / 2));
+        group.add(slab);
+        // Darker lot interior behind the sidewalk strip.
+        const lw = w - sidewalk;
+        const lot = new THREE.Mesh(box(lw, 0.02, lw), lotMat);
+        lot.position.set(sx * (half + sidewalk + lw / 2), curb + 0.01, sz * (half + sidewalk + lw / 2));
+        group.add(lot);
+      }
+    }
+    return { object: group };
+  },
+
+  building({ x, z, w, d, h, seed }) {
+    const r = rng(seed);
+    const group = new THREE.Group();
+    const wall = new THREE.Color().setHSL(0.55 + r() * 0.08, 0.07, 0.06 + r() * 0.04);
+    const floors = Math.max(1, Math.round(h / 3.3));
+    const makeSide = (width, s) =>
+      std(wall, {
+        emissiveMap: windowTexture(Math.max(1, Math.round(width / 2.4)), floors, s),
+        emissive: 0xffffff,
+        emissiveIntensity: 1.3,
+        roughness: 0.55,
+      });
+    const sideX = makeSide(d, seed * 7 + 1);
+    const sideZ = makeSide(w, seed * 7 + 2);
+    const roof = std(0x0d0f11, { roughness: 0.9 });
+    // Box face order: +x, -x, +y, -y, +z, -z
+    const body = new THREE.Mesh(box(w, h, d), [sideX, sideX, roof, roof, sideZ, sideZ]);
+    body.position.y = h / 2 + 0.15;
+    group.add(body);
+
+    // Rooftop clutter: AC units, a water tank, a parapet line.
+    const clutter = std(0x1a1c1f, { roughness: 0.7 });
+    const n = 2 + Math.floor(r() * 4);
+    for (let i = 0; i < n; i++) {
+      const s = 0.8 + r() * 1.8;
+      const unit = new THREE.Mesh(box(s, 0.6 + r() * 1.2, s * (0.6 + r())), clutter);
+      unit.position.set((r() - 0.5) * (w - 3), h + 0.15 + 0.5, (r() - 0.5) * (d - 3));
+      group.add(unit);
+    }
+    if (r() < 0.6) {
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 2.2, 14), clutter);
+      tank.position.set((r() - 0.5) * (w - 4), h + 0.15 + 2.2, (r() - 0.5) * (d - 4));
+      group.add(tank);
+    }
+    const parapet = new THREE.Mesh(box(w + 0.3, 0.5, d + 0.3), std(0x121417));
+    parapet.position.y = h + 0.15 + 0.1;
+    parapet.scale.set(1, 1, 1);
+    group.add(parapet);
+
+    let update;
+    // Tall buildings carry a blinking aviation light.
+    if (h > 36) {
+      const mat = glow('#ff1a1a', 6);
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), mat);
+      beacon.position.set(w / 2 - 0.6, h + 0.9, d / 2 - 0.6);
+      group.add(beacon);
+      update = (t) => {
+        mat.emissiveIntensity = (t % 1.6) < 0.25 ? 9 : 0.2;
+      };
+    }
+    group.position.set(x, 0, z);
+    return { object: group, update };
+  },
+
+  skybridge({ from, to, width, height }) {
+    const a = new THREE.Vector3(...from);
+    const b = new THREE.Vector3(...to);
+    const len = a.distanceTo(b);
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(box(len, height, width), std(0x15181b, { roughness: 0.6 }));
+    group.add(body);
+    // A lit strip of windows along both sides.
+    const strip = glow('#bfe7ff', 1.8);
+    for (const s of [-1, 1]) {
+      const band = new THREE.Mesh(box(len - 0.6, 0.5, 0.05), strip);
+      band.position.set(0, 0.2, s * (width / 2 + 0.01));
+      group.add(band);
+    }
+    group.position.copy(a).add(b).multiplyScalar(0.5);
+    group.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+    return { object: group };
+  },
+
+  lamp({ x, z, arm, height, color, intensity }) {
+    const group = new THREE.Group();
+    const metal = std(0x1b1d20, { roughness: 0.5, metalness: 0.4 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, height, 8), metal);
+    pole.position.y = height / 2 + 0.15;
+    group.add(pole);
+    const armLen = 1.6;
+    const [ax, az] = arm;
+    const armMesh = new THREE.Mesh(box(armLen, 0.08, 0.08), metal);
+    armMesh.position.set((ax * armLen) / 2, height + 0.15, (az * armLen) / 2);
+    armMesh.rotation.y = -Math.atan2(az, ax);
+    group.add(armMesh);
+    const headPos = new THREE.Vector3(ax * armLen, height + 0.05, az * armLen);
+    const head = new THREE.Mesh(box(0.7, 0.14, 0.34), glow(color, 7));
+    head.position.copy(headPos);
+    head.rotation.y = -Math.atan2(az, ax);
+    group.add(head);
+    const light = new THREE.PointLight(color, intensity, 26, 2);
+    light.position.copy(headPos).add(new THREE.Vector3(0, -0.3, 0));
+    group.add(light);
+    const cone = lightCone(color, 3.2, height - 0.2, 0.05);
+    cone.position.copy(headPos).add(new THREE.Vector3(0, -0.1, 0));
+    group.add(cone);
+    group.position.set(x, 0, z);
+    const world = new THREE.Vector3(x, 0, z).add(headPos);
+    return {
+      object: group,
+      rainLights: [{ position: world, color: new THREE.Color(color), strength: 1.0 }],
+    };
+  },
+
+  neon({ text, vertical, x, y, z, face, size, color, flicker }) {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x000000,
+      emissive: 0xffffff,
+      emissiveMap: neonTexture(text, color, vertical),
+      emissiveIntensity: 5,
+      roughness: 1,
+    });
+    const [w, h] = size;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    group.add(sign);
+    // Backing box so the sign has some depth from above.
+    const back = new THREE.Mesh(box(w + 0.1, h + 0.1, 0.25), std(0x0b0c0d));
+    back.position.z = -0.14;
+    group.add(back);
+    const light = new THREE.PointLight(color, 26, 12, 2);
+    light.position.set(0, 0, 1.2);
+    group.add(light);
+    group.position.set(x + face[0] * 0.3, y, z + face[1] * 0.3);
+    group.rotation.y = faceRotation(face);
+
+    let update;
+    if (flicker) {
+      // A tired transformer: mostly on, with bursts of stutter.
+      update = (t) => {
+        const burst = Math.sin(t * 0.7) > 0.72;
+        const on = !burst || Math.sin(t * 61.0) + Math.sin(t * 23.0) > 0.3;
+        mat.emissiveIntensity = on ? 5 : 0.25;
+        light.intensity = on ? 26 : 1;
+      };
+    }
+    const wp = new THREE.Vector3(x + face[0] * 1.2, y, z + face[1] * 1.2);
+    return {
+      object: group,
+      update,
+      rainLights: [{ position: wp, color: new THREE.Color(color), strength: 0.7 }],
+    };
+  },
+
+  'traffic-light'({ x, z, state }) {
+    const group = new THREE.Group();
+    const metal = std(0x17191b, { metalness: 0.4, roughness: 0.5 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4, 8), metal);
+    pole.position.y = 2.15;
+    group.add(pole);
+    const housing = new THREE.Mesh(box(0.4, 1.2, 0.35), metal);
+    housing.position.y = 4.0;
+    group.add(housing);
+    const colors = { red: '#ff2020', amber: '#ffa020', green: '#30ff80' };
+    ['red', 'amber', 'green'].forEach((c, i) => {
+      const lit = c === state;
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), lit ? glow(colors[c], 8) : std(0x050505));
+      lens.position.set(0, 4.35 - i * 0.35, 0.18);
+      group.add(lens);
+    });
+    group.position.set(x, 0, z);
+    group.rotation.y = Math.PI / 4;
+    return { object: group };
+  },
+
+  terminal({ x, z, face }) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(box(0.9, 1.9, 0.6), std(0x1d2124, { metalness: 0.3, roughness: 0.4 }));
+    body.position.y = 0.95 + 0.15;
+    group.add(body);
+    const hood = new THREE.Mesh(box(1.1, 0.12, 0.9), std(0x121416));
+    hood.position.set(0, 2.1, 0.12);
+    group.add(hood);
+    // Phosphor green screen, the one thing on this street that isn't 1999 neon.
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.45), glow('#39ff6a', 3.2));
+    screen.position.set(0, 1.45, 0.31);
+    group.add(screen);
+    const light = new THREE.PointLight('#39ff6a', 6, 4, 2);
+    light.position.set(0, 1.4, 0.8);
+    group.add(light);
+    group.position.set(x, 0, z);
+    group.rotation.y = faceRotation(face);
+    return { object: group };
+  },
+
+  car({ x, z, heading, color, lights }) {
+    const group = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.35 });
+    const body = new THREE.Mesh(box(4.4, 0.75, 1.85), paint);
+    body.position.y = 0.72;
+    group.add(body);
+    const cabin = new THREE.Mesh(box(2.3, 0.62, 1.62), new THREE.MeshStandardMaterial({ color: 0x07090b, roughness: 0.08, metalness: 0.6 }));
+    cabin.position.set(-0.25, 1.4, 0);
+    group.add(cabin);
+    const roof = new THREE.Mesh(box(1.9, 0.06, 1.55), paint);
+    roof.position.set(-0.3, 1.73, 0);
+    group.add(roof);
+    const tyre = std(0x050505, { roughness: 0.9 });
+    for (const [wx, wz] of [[1.4, 0.92], [1.4, -0.92], [-1.4, 0.92], [-1.4, -0.92]]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.26, 14), tyre);
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(wx, 0.36, wz);
+      group.add(wheel);
+    }
+    if (lights) {
+      const head = glow('#fff1d6', 9);
+      const tail = glow('#ff1010', 6);
+      for (const s of [-1, 1]) {
+        const h = new THREE.Mesh(box(0.06, 0.18, 0.4), head);
+        h.position.set(2.22, 0.78, s * 0.62);
+        group.add(h);
+        const t = new THREE.Mesh(box(0.06, 0.16, 0.5), tail);
+        t.position.set(-2.22, 0.8, s * 0.58);
+        group.add(t);
+        const beam = lightCone('#fff1d6', 2.8, 12, 0.035);
+        beam.rotation.z = Math.PI / 2 - 0.08;
+        beam.position.set(2.25, 0.78, s * 0.62);
+        group.add(beam);
+      }
+      const spot = new THREE.SpotLight('#fff1d6', 160, 30, 0.42, 0.6, 2);
+      spot.position.set(2.3, 0.8, 0);
+      spot.target.position.set(14, 0, 0);
+      group.add(spot, spot.target);
+      const red = new THREE.PointLight('#ff1010', 4, 5, 2);
+      red.position.set(-2.8, 0.8, 0);
+      group.add(red);
+    }
+    group.position.set(x, 0, z);
+    group.rotation.y = heading;
+    return { object: group };
+  },
+
+  person({ x, z, umbrella, coat, heading }) {
+    const group = new THREE.Group();
+    const cloth = std(coat, { roughness: 0.85 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 1.0, 4, 10), cloth);
+    body.position.y = 0.15 + 0.24 + 0.5;
+    body.scale.set(1, 1, 0.75);
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), std(0x2b2724));
+    head.position.y = 0.15 + 1.62;
+    group.add(head);
+    if (umbrella) {
+      const canopy = new THREE.Mesh(
+        new THREE.SphereGeometry(0.62, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2.4),
+        new THREE.MeshStandardMaterial({ color: umbrella, roughness: 0.25, metalness: 0.1, side: THREE.DoubleSide }),
+      );
+      canopy.scale.y = 0.55;
+      canopy.position.y = 0.15 + 1.95;
+      group.add(canopy);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.7, 5), std(0x333333));
+      shaft.position.y = 0.15 + 1.75;
+      group.add(shaft);
+    } else {
+      // No umbrella: a hat, collar up.
+      const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.05, 14), std(0x121212));
+      hat.position.y = 0.15 + 1.73;
+      group.add(hat);
+    }
+    group.position.set(x, 0, z);
+    group.rotation.y = heading;
+    return { object: group };
+  },
+};
