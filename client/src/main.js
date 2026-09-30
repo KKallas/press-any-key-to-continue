@@ -924,44 +924,76 @@ function doorOf(plot, from, byCar = false) {
   return best;
 }
 
-// building: the building clicked on, if any. In the car that means "take me
-// to its door": the nearest one, parked as close as the car can get.
-function waypoint([x, z], fast, building = null) {
+// The booth nearest a clicked point, if the click landed on one.
+function boothAt([x, z], reach = 5) {
+  let best = null;
+  let bd = reach;
+  for (const b of world.booths) {
+    const d = Math.hypot(b.x - x, b.z - z);
+    if (d < bd) {
+      bd = d;
+      best = b;
+    }
+  }
+  return best;
+}
+
+// A car action to run on arrival (drive into a garage, then park/respray).
+let pendingCarAction = null;
+
+// building: the building clicked on. In the car, if it has a garage the car
+// drives in and parks (or gets a respray); otherwise it heads for the door.
+// booth: a phone booth that was clicked.
+function waypoint([x, z], fast, building = null, booth = null) {
   if (mode === 'car') {
+    pendingCarAction = null;
+    const park = building && places.parking.get(building);
+    if (park) {
+      const entry = { plot: building, ...park };
+      const act = () => (park.respray ? respray(entry) : parkCar(entry));
+      // Already at the entrance? Just do it. Otherwise drive in and do it on arrival.
+      if (Math.hypot(car.x - park.hx, car.z - park.hz) < 7 && Math.abs(car.speed) < 3) return act();
+      if (!autopilot.go([park.hx, park.hz], fast ? 'stunt' : 'normal')) return say('NO ROUTE');
+      autopilot.route.label = park.respray ? 'TO RESPRAY' : 'TO GARAGE';
+      pendingCarAction = { at: [park.hx, park.hz], run: act };
+      return;
+    }
     const door = building ? doorOf(building, [car.x, car.z], true) : null;
-    const goal = door ? [door.hx, door.hz] : [x, z];
+    const goal = door ? [door.hx, door.hz] : booth ? [booth.x, booth.z] : [x, z];
     if (!autopilot.go(goal, fast ? 'stunt' : 'normal')) say('NO ROUTE');
     else {
-      autopilot.route.label = door ? `TO ${door.plot.toUpperCase()}` : '';
-      autopilot.route.door = door;
+      autopilot.route.label = door ? `TO ${door.plot.toUpperCase()}` : booth ? 'TO BOOTH' : '';
       if (!door && !autopilot.route.reached) say(autopilot.route.parking ? 'PARKING AT THE KERB' : 'CAN\'T GET CLOSER BY CAR');
     }
     return;
   }
   if (mode !== 'foot') return;
-  // A door or the car near the click, or a building: walk there and use it.
+  // A booth, a door, or the car near the click: walk there and use it.
   let door = building ? doorOf(building, [walker.x, walker.z]) : null;
   let bd = 3;
-  for (const d of door ? [] : world.doors) {
+  for (const d of door || booth ? [] : world.doors) {
     const dd = Math.hypot(d.hx - x, d.hz - z);
     if (dd < bd) {
       bd = dd;
       door = d;
     }
   }
-  const toCar = !door && Math.hypot(car.x - x, car.z - z) < 3.5;
-  const target = door ? [door.hx, door.hz] : [x, z];
+  const toCar = !door && !booth && Math.hypot(car.x - x, car.z - z) < 3.5;
+  const target = booth ? [booth.x, booth.z] : door ? [door.hx, door.hz] : [x, z];
   const pts = footNav.findPath([walker.x, walker.z], target, { offRoad: 1 });
-  // Arriving at a door or the car runs the primary action there — so walking
-  // to a bank ends in FORCE ENTRY, not a plain enter.
-  if (!pts || !walker.follow(pts, fast, door || toCar ? primaryAction : null)) {
+  // Arriving runs the right thing: jack into a booth, force a bank, get in the car.
+  const onArrive = booth ? () => jackBooth(booth) : door || toCar ? primaryAction : null;
+  if (!pts || !walker.follow(pts, fast, onArrive)) {
     say('NO WAY THROUGH');
     return;
   }
-  walker.route.label = door ? `TO ${door.plot.toUpperCase()}` : toCar ? 'TO CAR-1' : '';
+  walker.route.label = booth ? 'TO BOOTH' : door ? `TO ${door.plot.toUpperCase()}` : toCar ? 'TO CAR-1' : '';
 }
 
 let pendingClick = null;
+function feedClick(at, fast, building) {
+  waypoint(at, fast, building, boothAt(at));
+}
 droneControl.onClick = (cx, cy) => {
   const at = groundAt(cx, cy);
   if (!at) return;
@@ -969,11 +1001,27 @@ droneControl.onClick = (cx, cy) => {
   if (pendingClick) {
     clearTimeout(pendingClick.timer);
     pendingClick = null;
-    waypoint(at, true, building);
+    feedClick(at, true, building);
     return;
   }
-  pendingClick = { timer: setTimeout(() => { pendingClick = null; waypoint(at, false, building); }, 260) };
+  pendingClick = { timer: setTimeout(() => { pendingClick = null; feedClick(at, false, building); }, 260) };
 };
+
+// Clicking the city map sets a destination too — single for a normal drive,
+// double for flat out, the same as the feed.
+let mapPending = null;
+$('map').addEventListener('click', (e) => {
+  if (!mapScreen) return;
+  const r = $('map').getBoundingClientRect();
+  const at = mapScreen.worldAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  if (mapPending) {
+    clearTimeout(mapPending);
+    mapPending = null;
+    waypoint(at, true);
+    return;
+  }
+  mapPending = setTimeout(() => { mapPending = null; waypoint(at, false); }, 260);
+});
 
 // ---- Input -----------------------------------------------------------------
 
@@ -1029,6 +1077,16 @@ function playerAt() {
   return [insideDoor.hx, insideDoor.hz];
 }
 
+// Where the player is currently headed, for the map's highlight.
+function currentDest() {
+  if (mode === 'car' && autopilot.route) return { x: autopilot.route.goal[0], z: autopilot.route.goal[1], fast: autopilot.route.mode === 'stunt' };
+  if (mode === 'foot' && walker.route) {
+    const g = walker.route.pts[walker.route.pts.length - 1];
+    return { x: g[0], z: g[1], fast: walker.route.run };
+  }
+  return null;
+}
+
 let missionStart = 3;
 let monitorT = 0;
 function game(dt, time) {
@@ -1069,6 +1127,7 @@ function game(dt, time) {
       car: [car.x, car.z, car.heading],
       skin: mode === 'foot' ? [walker.x, walker.z] : null,
       mission,
+      dest: currentDest(),
       pursuers: pursuit?.contacts(),
       players: net?.contacts(),
       heat: pursuit?.heat ?? 0,
@@ -1102,10 +1161,19 @@ function frame(now) {
 
   let input;
   if (mode === 'car' && autopilot.route) {
-    if (car.keyboardActive) autopilot.cancel(); // hands on the wheel: manual
-    else input = autopilot.update(dt / 1000) ?? undefined;
+    if (car.keyboardActive) {
+      autopilot.cancel(); // hands on the wheel: manual
+      pendingCarAction = null;
+    } else input = autopilot.update(dt / 1000) ?? undefined;
   }
   if (!parked) car.update(dt / 1000, input);
+  // Drove into a garage: park or respray on arrival.
+  if (pendingCarAction && mode === 'car' && !parked && !autopilot.route &&
+      Math.hypot(car.x - pendingCarAction.at[0], car.z - pendingCarAction.at[1]) < 7 && Math.abs(car.speed) < 3) {
+    const run = pendingCarAction.run;
+    pendingCarAction = null;
+    run();
+  }
   walker.update(dt / 1000);
   game(dt / 1000, time);
   if (net) {

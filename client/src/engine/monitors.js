@@ -41,6 +41,15 @@ export class MapScreen {
     const oy = top + (H - top - bottom) / 2 - ((b.minZ + b.maxZ) / 2) * s;
     this.P = (x, z) => [ox + x * s, oy + z * s];
     this.s = s;
+    this.ox = ox;
+    this.oy = oy;
+  }
+
+  // A click on the map (fx, fy as 0..1 of the canvas) back to world x, z.
+  worldAt(fx, fy) {
+    const px = fx * this.canvas.width;
+    const py = fy * this.canvas.height;
+    return [(px - this.ox) / this.s, (py - this.oy) / this.s];
   }
 
   drawBase() {
@@ -131,6 +140,28 @@ export class MapScreen {
       g.textAlign = 'right';
       if (m.state === 'open') g.fillText(`BY ${m.clock}  T-${String(Math.ceil(left)).padStart(2, '0')}`, W * 0.96, H * 0.03);
       else g.fillText(m.state === 'made' ? `${m.count.made} MADE` : 'NEXT WINDOW...', W * 0.96, H * 0.03);
+    }
+
+    // Where you told the car (or skin) to go: a bright cross, and a line from
+    // you to it. Longer dashes when the trip is flat out, like the feed.
+    if (state.dest) {
+      const [dx, dy] = P(state.dest.x, state.dest.z);
+      const [cx0, cy0] = P(state.car[0], state.car[1]);
+      g.strokeStyle = rgba(0.7);
+      g.setLineDash(state.dest.fast ? [6, 4] : [2, 4]);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(cx0, cy0);
+      g.lineTo(dx, dy);
+      g.stroke();
+      g.setLineDash([]);
+      const r = Math.max(4, H * 0.03);
+      g.strokeStyle = rgba(blink ? 1 : 0.5);
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(dx - r, dy); g.lineTo(dx + r, dy);
+      g.moveTo(dx, dy - r); g.lineTo(dx, dy + r);
+      g.stroke();
     }
 
     // The car: a heading tick; the skin on foot: a dot.
