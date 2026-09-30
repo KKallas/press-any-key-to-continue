@@ -256,7 +256,7 @@ export function defaultStyle(plot, area) {
 // ---- The generator -----------------------------------------------------------
 
 // Adds one building to the block's builders and returns its overlay outline.
-function building(plot, B) {
+function building(plot, B, neonSpots = []) {
   const H = plot.height;
   let fp = plot.footprint;
   if (!H || fp.length < 3) return [];
@@ -407,7 +407,7 @@ function building(plot, B) {
     B.trim.box(d.x + d.nx * 0.45, GROUND + 2.55, d.z + d.nz * 0.45, 1.9, 0.12, 0.9, ang, trim);
   }
 
-  rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, st.crown, roofCol);
+  rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, st.crown, roofCol, neonSpots);
 
   // Aviation light on the tall ones.
   if (H > 45) {
@@ -449,7 +449,22 @@ function rect(cx, cz, sx, sz, ang) {
   return [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([x, z]) => [cx + x * c - z * s, cz + x * s + z * c]);
 }
 
-function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, roofCol) {
+function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, roofCol, neonSpots = []) {
+  // The neon nearest a spot, and how strongly it would show in the water: a
+  // sign on this building or the one next door throws colour onto a wet roof.
+  const neonAt = (x, z) => {
+    let best = null;
+    let bd = 40;
+    for (const n of neonSpots) {
+      const d = Math.hypot(n.x - x, n.z - z);
+      if (d < bd) {
+        bd = d;
+        best = n;
+      }
+    }
+    if (!best) return null;
+    return { color: best.color, strength: Math.max(0, 1 - bd / 40) };
+  };
   // The clutter that stands on a deck: fewer of them now, so the deck shows.
   const place = (pts, y, avoid, count, kinds) => {
     const c = centroid(pts);
@@ -475,7 +490,18 @@ function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, r
         }
         // Dark and glossy (the trim material catches light), so it reads as
         // standing water the way the street puddles do — not a bright shape.
-        if (poly.every((q) => inside(q, pts))) B.trim.cap(poly, y + 0.03, PUDDLE);
+        if (poly.every((q) => inside(q, pts))) {
+          B.trim.cap(poly, y + 0.03, PUDDLE);
+          // Neon next door reflects in the water: a faint coloured sheen, the
+          // way the wet asphalt catches the signs.
+          const neon = neonAt(p[0], p[1]);
+          if (neon && neon.strength > 0.05) {
+            // A tint, not a lamp: this feeds the bloom pass, so keep it low or
+            // the whole roof turns into a glowing smear.
+            const sheen = neon.color.clone().multiplyScalar(0.02 + neon.strength * 0.13);
+            B.glow.cap(poly, y + 0.04, sheen);
+          }
+        }
       } else if (kind === 'skylight') {
         // A run of pitched glass, glowing from the floor below.
         const cols = 1 + Math.floor(r() * 3);
@@ -631,9 +657,22 @@ export function buildDecoBlock(plots) {
   const M = decoMaterials();
   const B = { walls: new Builder(), roof: new Builder(), trim: new Builder(), glow: new Builder() };
   const outline = [];
+  // Where the neon signs are in this block, so a wet roof can reflect the one
+  // next door (cross-block neighbours aren't known here; within a block is).
+  const neonSpots = [];
+  for (const plot of plots) {
+    if (!plot.height || (plot.footprint?.length ?? 0) < 3) continue;
+    let fp = plot.footprint;
+    if (signedArea(fp) < 0) fp = [...fp].reverse();
+    const st = { ...defaultStyle(plot, Math.abs(signedArea(fp))), ...(plot.style ?? {}) };
+    if (st.neon) {
+      const c = centroid(fp);
+      neonSpots.push({ x: c[0], z: c[1], color: new THREE.Color(st.neon) });
+    }
+  }
   // Each outline segment knows its building, so the HUD can show just one.
   for (const plot of plots) {
-    for (const seg of building(plot, B)) {
+    for (const seg of building(plot, B, neonSpots)) {
       seg.owner = plot.id;
       outline.push(seg);
     }
