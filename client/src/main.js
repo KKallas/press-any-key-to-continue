@@ -13,6 +13,8 @@ import { DroneControl } from './engine/drone.js';
 import { CarControl } from './engine/car.js';
 import { Hud } from './engine/hud.js';
 import { WalkerControl } from './engine/walker.js';
+import { NavGrid } from './engine/nav.js';
+import { Autopilot } from './engine/autopilot.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -89,6 +91,16 @@ const walker = new WalkerControl({
   up: () => [-Math.sin(droneControl.theta), -Math.cos(droneControl.theta)],
 });
 
+// Route planning: a coarse grid for the car, a finer one for a person.
+const carNav = new NavGrid({ bounds: world.bounds, free: world.carFree, surface: world.surface, cell: 1 });
+const footNav = new NavGrid({ bounds: world.bounds, free: world.footFree, surface: world.surface, cell: 0.5 });
+const autopilot = new Autopilot({
+  car,
+  plan: (from, to, offRoad) => carNav.findPath(from, to, { offRoad }),
+  blocked: (x, z) => carNav.block(x, z, 1.5),
+  see: (a, b) => carNav.clear(a, b, 1),
+});
+
 droneControl.limit = world.limit ?? 70;
 droneControl.lock = () =>
   mode === 'car'
@@ -123,17 +135,20 @@ function use() {
     const placed = walker.place(car.x + Math.cos(side) * 2.2, car.z - Math.sin(side) * 2.2);
     if (!placed) return;
     car.occupied = false;
+    autopilot.cancel();
     walker.active = true;
     mode = 'foot';
   } else if (mode === 'foot') {
     const door = nearestDoor();
     if (door) {
       insideDoor = door;
+      walker.route = null;
       walker.active = false;
       mode = 'inside';
       server.append({ block: BLOCK, type: 'enter', id: 'skin', props: { plot: door.plot, x: walker.x, z: walker.z } });
     } else if (carInReach()) {
       walker.active = false;
+      walker.route = null;
       car.occupied = true;
       mode = 'car';
       server.append({ block: BLOCK, type: 'move', transient: true, id: 'skin', props: { x: car.x, z: car.z, visible: false } });
@@ -306,11 +321,11 @@ function setActive(entry) {
 }
 
 function syncHint() {
-  const common = 'DRAG LOOK · F TRACK · Z X ORBIT · WHEEL ZOOM';
+  const common = 'DRAG LOOK · F TRACK · Z X ORBIT';
   $('hint').textContent = active.kind !== 'drone'
     ? 'ESC · BACK TO DRONE    TAB · NEXT CAMERA'
-    : mode === 'car' ? `WASD DRIVE · SPACE HANDBRAKE · E GET OUT · ${common}`
-    : mode === 'foot' ? `WASD WALK · SHIFT RUN · E DOOR OR CAR · ${common}`
+    : mode === 'car' ? `CLICK DRIVE · DOUBLE-CLICK FLAT OUT · E GET OUT · ${common}`
+    : mode === 'foot' ? `CLICK WALK · DOUBLE-CLICK RUN · E USE · ${common}`
     : `E · LEAVE THE BUILDING · ${common}`;
 }
 
@@ -377,13 +392,37 @@ function trackInfo() {
 }
 
 // What E would do right now, shown next to the skin.
+let flash = { text: '', until: 0 };
+function say(text, secs = 1.6) {
+  flash = { text, until: performance.now() + secs * 1000 };
+}
+
 function promptText() {
-  if (mode === 'car') return Math.abs(car.speed) > 3 ? '' : '[E] GET OUT';
+  if (performance.now() < flash.until) return flash.text;
+  if (mode === 'car') {
+    if (autopilot.route) return `AUTO ${autopilot.mode === 'stunt' ? 'FLAT OUT' : 'DRIVE'}  ${Math.round(autopilot.remaining())} M`;
+    if (car.air > 0) return 'AIRBORNE';
+    return Math.abs(car.speed) > 3 ? '' : '[E] GET OUT';
+  }
+  if (walker.route) return `${walker.route.run ? 'RUN' : 'WALK'}  ${walker.route.label ?? ''}`.trim();
   if (mode === 'inside') return '[E] LEAVE';
   const door = nearestDoor();
   if (door) return `[E] ENTER ${door.plot.toUpperCase()}`;
   if (carInReach()) return '[E] GET IN';
   return '';
+}
+
+// The route being followed, for the HUD: from the body to the waypoint.
+function routeForHud() {
+  if (mode === 'car' && autopilot.route) {
+    const r = autopilot.route;
+    return { pts: [[car.x, car.z], ...r.pts.slice(r.i)], goal: r.goal, stunt: r.mode === 'stunt' };
+  }
+  if (mode === 'foot' && walker.route) {
+    const r = walker.route;
+    return { pts: [[walker.x, walker.z], ...r.pts.slice(r.i)], goal: r.pts[r.pts.length - 1], stunt: r.run };
+  }
+  return null;
 }
 
 function drawHud(time) {
@@ -394,6 +433,7 @@ function drawHud(time) {
     blocks: world.blocks,
     cams: hudCams,
     doors: near,
+    route: routeForHud(),
     activeDoor: mode === 'foot' ? nearestDoor() : null,
     prompt: promptText(),
     track: trackInfo(),
@@ -404,6 +444,60 @@ function drawHud(time) {
     time,
   });
 }
+
+// ---- Clicks: set a waypoint -----------------------------------------------
+// One click: go there sensibly. Two quick clicks: as fast as possible (the
+// car takes the fastest line, drifts and jumps kerbs; on foot, run).
+
+const raycaster = new THREE.Raycaster();
+const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function groundAt(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, drone.camera);
+  const p = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(ground, p) ? [p.x, p.z] : null;
+}
+
+function waypoint([x, z], fast) {
+  if (mode === 'car') {
+    if (!autopilot.go([x, z], fast ? 'stunt' : 'normal')) say('NO ROUTE');
+    else if (!autopilot.route.reached) say('CAN\'T GET CLOSER BY CAR');
+    return;
+  }
+  if (mode !== 'foot') return;
+  // A door or the car near the click: walk there and use it.
+  let door = null;
+  let bd = 3;
+  for (const d of world.doors) {
+    const dd = Math.hypot(d.hx - x, d.hz - z);
+    if (dd < bd) {
+      bd = dd;
+      door = d;
+    }
+  }
+  const toCar = !door && Math.hypot(car.x - x, car.z - z) < 3.5;
+  const target = door ? [door.hx, door.hz] : [x, z];
+  const pts = footNav.findPath([walker.x, walker.z], target, { offRoad: 1 });
+  if (!pts || !walker.follow(pts, fast, door || toCar ? use : null)) {
+    say('NO WAY THROUGH');
+    return;
+  }
+  walker.route.label = door ? `TO ${door.plot.toUpperCase()}` : toCar ? 'TO CAR-1' : '';
+}
+
+let pendingClick = null;
+droneControl.onClick = (cx, cy) => {
+  const at = groundAt(cx, cy);
+  if (!at) return;
+  if (pendingClick) {
+    clearTimeout(pendingClick.timer);
+    pendingClick = null;
+    waypoint(at, true);
+    return;
+  }
+  pendingClick = { timer: setTimeout(() => { pendingClick = null; waypoint(at, false); }, 260) };
+};
 
 // ---- Input -----------------------------------------------------------------
 
@@ -457,7 +551,12 @@ function frame(now) {
   last = now;
   const time = (now - t0) / 1000;
 
-  car.update(dt / 1000);
+  let input;
+  if (mode === 'car' && autopilot.route) {
+    if (car.keyboardActive) autopilot.cancel(); // hands on the wheel: manual
+    else input = autopilot.update(dt / 1000) ?? undefined;
+  }
+  car.update(dt / 1000, input);
   walker.update(dt / 1000);
   if (active === drone) droneControl.update(dt / 1000);
   loss = Math.max(0, loss - dt / 900);
@@ -495,4 +594,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { server, world, pipeline, car, walker, use, mode: () => mode, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

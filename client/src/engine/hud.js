@@ -125,6 +125,40 @@ export class Hud {
     }
     g.globalAlpha = 1;
 
+    // The route: a dashed line along the ground to the waypoint, which gets
+    // a cross in a circle. Flat-out routes are drawn with longer dashes.
+    if (s.route) {
+      g.lineWidth = 2 * k;
+      g.setLineDash(s.route.stunt ? [14 * k, 6 * k] : [6 * k, 6 * k]);
+      g.globalAlpha = 0.85;
+      g.beginPath();
+      let started = false;
+      for (const [x, z] of s.route.pts) {
+        if (!this.toPx([x, 0.3, z], s.camera, a)) continue;
+        if (started) g.lineTo(a.x, a.y);
+        else g.moveTo(a.x, a.y);
+        started = true;
+      }
+      g.stroke();
+      g.setLineDash([]);
+      g.globalAlpha = 1;
+      const [gx, gz] = s.route.goal;
+      if (this.toPx([gx, 0.3, gz], s.camera, a)) {
+        const r = 11 * k;
+        g.beginPath();
+        g.arc(a.x, a.y, r, 0, Math.PI * 2);
+        g.moveTo(a.x - r * 1.6, a.y); g.lineTo(a.x - r * 0.5, a.y);
+        g.moveTo(a.x + r * 0.5, a.y); g.lineTo(a.x + r * 1.6, a.y);
+        g.moveTo(a.x, a.y - r * 1.6); g.lineTo(a.x, a.y - r * 0.5);
+        g.moveTo(a.x, a.y + r * 0.5); g.lineTo(a.x, a.y + r * 1.6);
+        g.stroke();
+        g.font = font(18);
+        g.textAlign = 'left';
+        g.textBaseline = 'middle';
+        g.fillText('WPT', a.x + r * 1.9, a.y);
+      }
+    }
+
     // Tracking box on the car or skin, sized to it as seen from up here.
     if (s.track && this.toPx(s.track.pos, s.camera, a)) {
       this.w.set(s.track.size ?? 3, 0, 0).applyQuaternion(s.camera.quaternion);

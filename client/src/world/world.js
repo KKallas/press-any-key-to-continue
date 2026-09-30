@@ -213,8 +213,9 @@ export class World {
     e.object.position.x = props.x;
     e.object.position.z = props.z;
     if (props.heading !== undefined) e.object.rotation.y = props.heading;
-    // Up on the kerb when off the road.
-    if (this.surface) e.object.position.y = this.surface(props.x, props.z) ? 0 : 0.15;
+    // Up on the kerb when off the road, and higher still in the air.
+    if (this.surface) e.object.position.y = (this.surface(props.x, props.z) ? 0 : 0.15) + (props.air ?? 0);
+    if (props.pitch !== undefined) e.object.rotation.z = props.pitch;
     if (props.visible !== undefined) e.object.visible = props.visible;
     e.state = { ...e.state, ...props };
   }

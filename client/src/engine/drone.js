@@ -31,20 +31,29 @@ export class DroneControl {
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
 
+    // A press that barely moves is a click (onClick); one that moves is a
+    // drag, which looks around and breaks the lock.
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.enabled) return;
-      this.drag = { x: e.clientX, y: e.clientY };
+      this.drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: false };
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
-      if (!this.drag) return;
+      const d = this.drag;
+      if (!d) return;
+      if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return;
+      d.moved = true;
       this.locked = false;
-      this.pan(e.clientX - this.drag.x, e.clientY - this.drag.y);
-      this.drag = { x: e.clientX, y: e.clientY };
+      this.pan(e.clientX - d.x, e.clientY - d.y);
+      d.x = e.clientX;
+      d.y = e.clientY;
     });
-    const end = () => (this.drag = null);
-    canvas.addEventListener('pointerup', end);
-    canvas.addEventListener('pointercancel', end);
+    canvas.addEventListener('pointerup', (e) => {
+      const d = this.drag;
+      this.drag = null;
+      if (d && !d.moved && performance.now() - d.t0 < 500) this.onClick?.(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('pointercancel', () => (this.drag = null));
     window.addEventListener('wheel', (e) => {
       if (!this.enabled) return;
       this.zoom(Math.exp(e.deltaY * 0.0012));

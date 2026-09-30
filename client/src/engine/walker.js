@@ -54,9 +54,40 @@ export class WalkerControl {
     });
   }
 
+  // Walk (or run) a planned route; onArrive runs at the end.
+  follow(pts, run, onArrive) {
+    this.route = pts && pts.length > 1 ? { pts, i: 1, run, onArrive } : null;
+    return !!this.route;
+  }
+
   update(dt) {
     if (!this.active) return;
     const k = this.keys;
+    const keysDown = ['w', 's', 'a', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].some((c) => k.has(c));
+    if (this.route && keysDown) this.route = null; // the keyboard takes over
+    if (this.route) {
+      const r = this.route;
+      let [tx, tz] = r.pts[r.i];
+      while (r.i < r.pts.length - 1 && Math.hypot(tx - this.x, tz - this.z) < 0.5) [tx, tz] = r.pts[++r.i];
+      const dx = tx - this.x;
+      const dz = tz - this.z;
+      const L = Math.hypot(dx, dz);
+      if (r.i === r.pts.length - 1 && L < 0.35) {
+        this.speed = 0;
+        this.route = null;
+        this.send(true);
+        r.onArrive?.();
+        return;
+      }
+      this.speed = r.run ? RUN : WALK;
+      const step = Math.min(L, this.speed * dt);
+      this.heading = Math.atan2(dx, dz);
+      const m = slide(this.free, this.x, this.z, (dx / L) * step, (dz / L) * step);
+      this.x = m.x;
+      this.z = m.z;
+      this.send(true);
+      return;
+    }
     const [ux, uz] = this.up();
     const rx = -uz;
     const rz = ux;
