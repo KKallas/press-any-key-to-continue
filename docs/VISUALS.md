@@ -25,7 +25,11 @@ That makes every flaw in the image part of the fiction, not a filter:
 
 Every camera sets its own recording in its lens profile (`lines`, `fps`, `compression`, `glitch`), so a bank camera can be clean and smooth while a back-street one is a smear.
 
+**Tuning the grade.** The TUNE button opens sliders for every part of the grade: exposure, overall strength, bleach, contrast, shadow lift, how much colour survives outside the lights, and the green shadow tint. Settings are remembered in the browser. COPY gives them as code, to paste over `GRADE_DEFAULTS` in [`pipeline.js`](../client/src/engine/pipeline.js) and make them the default for everyone.
+
 **Warm against cool.** The base is a cold green-cyan night in the tint of the Matrix, with sodium streetlights turning sickly. Against it, a slightly sweeter 90s: tungsten light spilling from windows, magenta and amber neon.
+
+**Rain at the lens.** From the drone, rain doesn't only fall on the street: it starts at the camera. Drops close to the lens are big, soft and out of focus, streaked towards the middle of the picture as they fall away, and shrink to specks over the street. They live on their own render layer, so the wet-street mirror doesn't reflect them, and the street cameras don't see them. LENS RAIN in the TUNE panel sets how many there are.
 
 **Rain and night everywhere.** Wet streets double every light source for free, and darkness hides low detail. Most of the budget goes into light, which is cheap in a browser if you fake it well. It is always night because nobody has ever written daylight (see [`LORE.md`](LORE.md)).
 

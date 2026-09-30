@@ -11,6 +11,18 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { lensDirtTexture, lensDropsTexture } from './textures.js';
 
+// The grade, softer than the first cut. Every value is adjustable from the
+// TUNE panel; paste the panel's Copy output here to make it the default.
+export const GRADE_DEFAULTS = {
+  exposure: 1.1, // before tone mapping
+  strength: 1.0, // 0 = ungraded, 1 = full grade
+  bleach: 0.6, // bleach bypass: silver left in the print
+  contrast: 0.5, // gentle to hard, crushed blacks
+  lift: 0.15, // opens up the shadows
+  color: 0.15, // colour that survives outside the lights
+  tint: 0.6, // cold green-cyan in the shadows
+};
+
 const CameraShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -27,6 +39,13 @@ const CameraShader = {
     uDrops: { value: 1.0 },
     uNoise: { value: 0.35 },
     uGrade: { value: 1.0 },
+    // Grade controls (see GRADE_DEFAULTS).
+    uGradeMix: { value: 1.0 },
+    uBleach: { value: 0.6 },
+    uContrast: { value: 0.5 },
+    uLift: { value: 0.15 },
+    uColorKeep: { value: 0.15 },
+    uTint: { value: 0.6 },
     // The recording: resolution, interlaced field, compression, glitches.
     uVideoRes: { value: new THREE.Vector2(640, 400) },
     uField: { value: 0 },
@@ -45,6 +64,7 @@ const CameraShader = {
     uniform sampler2D tDiffuse, tBloom, tDirt, tDrops, tHud;
     uniform float uHud;
     uniform float uTime, uAspect, uExposure, uBarrel, uAberration, uDirt, uDrops, uNoise, uGrade;
+    uniform float uGradeMix, uBleach, uContrast, uLift, uColorKeep, uTint;
     uniform vec2 uRes, uVideoRes;
     uniform float uField, uFrame, uCompress, uGlitch, uLoss;
     varying vec2 vUv;
@@ -132,24 +152,27 @@ const CameraShader = {
         vec3 lo = 2.0 * col * L;
         vec3 hi = 1.0 - 2.0 * (1.0 - col) * (1.0 - L);
         vec3 silver = mix(lo, hi, clamp((luma - 0.45) * 10.0, 0.0, 1.0));
-        vec3 bleached = mix(col, silver, 0.85);
+        vec3 bleached = mix(col, silver, uBleach);
 
         // Near-monochrome base, tinted cold green-cyan in the shadows.
         vec3 mono = vec3(dot(bleached, vec3(0.2126, 0.7152, 0.0722)));
         mono = pow(mono, vec3(0.85));
-        mono *= mix(vec3(0.82, 1.0, 0.94), vec3(1.0), smoothstep(0.1, 0.8, mono.r));
+        mono *= mix(mix(vec3(1.0), vec3(0.82, 1.0, 0.94), uTint), vec3(1.0), smoothstep(0.1, 0.8, mono.r));
 
         // The Sin City rule: light keeps its colour, and so does red.
         float glowMask = smoothstep(0.05, 0.45, dot(toSRGB(aces(bloom)), vec3(0.333)));
         float bright = smoothstep(0.55, 0.9, luma);
         float red = smoothstep(0.08, 0.3, col.r - max(col.g, col.b));
-        float keep = clamp(max(max(glowMask, bright * 0.8), red), 0.0, 1.0);
+        float keep = clamp(max(max(max(glowMask, bright * 0.8), red), uColorKeep), 0.0, 1.0);
         vec3 graded = mix(mono, bleached, keep);
 
-        // Hard contrast, crushed blacks.
-        graded = smoothstep(vec3(0.0), vec3(0.97), graded);
-        graded = pow(graded, vec3(1.04));
-        col = graded;
+        // Contrast: from gentle to hard with crushed blacks.
+        vec3 hard = smoothstep(vec3(0.0), vec3(0.97), graded);
+        hard = pow(hard, vec3(1.04 + 0.12 * uContrast));
+        graded = mix(graded, hard, uContrast);
+        // Shadow lift: opens up the dark end without greying the lights.
+        graded = pow(max(graded, vec3(0.0)), vec3(1.0 / (1.0 + uLift * 1.5)));
+        col = mix(col, graded, uGradeMix);
       }
 
       // Burned-in symbology. It joins the picture here, after the grade and
@@ -234,6 +257,7 @@ export class Pipeline {
     cam.uniforms.uDrops.value = tier.drops ? lens.drops : 0;
     cam.uniforms.uNoise.value = lens.noise;
     cam.uniforms.uGrade.value = this.grade ? 1 : 0;
+    this.applyGradeParams();
     const lines = lens.lines ?? 400;
     // CCTV pixels are wider than they are tall.
     cam.uniforms.uVideoRes.value.set(Math.round(lines * (width / height) * 0.8), lines);
@@ -257,6 +281,25 @@ export class Pipeline {
 
   setLoss(v) {
     if (this.cameraPass) this.cameraPass.uniforms.uLoss.value = v;
+  }
+
+  // Grade settings from the tuning panel; kept across rebuilds.
+  setGradeParams(params) {
+    this.gradeParams = { ...(this.gradeParams ?? GRADE_DEFAULTS), ...params };
+    this.applyGradeParams();
+  }
+
+  applyGradeParams() {
+    const u = this.cameraPass?.uniforms;
+    const p = this.gradeParams ?? GRADE_DEFAULTS;
+    if (!u) return;
+    u.uExposure.value = p.exposure;
+    u.uGradeMix.value = p.strength;
+    u.uBleach.value = p.bleach;
+    u.uContrast.value = p.contrast;
+    u.uLift.value = p.lift;
+    u.uColorKeep.value = p.color;
+    u.uTint.value = p.tint;
   }
 
   setGrade(on) {

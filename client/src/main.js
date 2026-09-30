@@ -7,7 +7,7 @@ import { LocalServer } from './net/local-server.js';
 import { World } from './world/world.js';
 import { BLOCK_01 } from './world/block01.js';
 import { cityToEvents } from './world/city.js';
-import { Pipeline } from './engine/pipeline.js';
+import { Pipeline, GRADE_DEFAULTS } from './engine/pipeline.js';
 import { TIERS, AutoQuality } from './engine/quality.js';
 import { DroneControl } from './engine/drone.js';
 import { CarControl } from './engine/car.js';
@@ -56,6 +56,8 @@ world.finalize();
 
 const DRONE_ID = 'UAV-2';
 const drone = world.cameras.get(DRONE_ID);
+// Only the drone sees the rain falling past its own lens.
+drone.camera.layers.enable(1);
 const droneControl = new DroneControl(drone, canvas);
 const streetCams = [...world.cameras.values()].filter((c) => c.kind === 'camera');
 let active = drone;
@@ -210,6 +212,81 @@ $('grade').addEventListener('click', () => {
   $('grade').setAttribute('aria-pressed', String(pipeline.grade));
 });
 
+// ---- Grade tuning -------------------------------------------------------------
+// Sliders for every part of the grade, plus the rain at the lens. Settings
+// are remembered in this browser; COPY gives them as code for the defaults.
+
+const TUNE = [
+  { key: 'exposure', label: 'EXPOSURE', min: 0.4, max: 2.5, step: 0.05 },
+  { key: 'strength', label: 'STRENGTH', min: 0, max: 1, step: 0.05 },
+  { key: 'bleach', label: 'BLEACH', min: 0, max: 1, step: 0.05 },
+  { key: 'contrast', label: 'CONTRAST', min: 0, max: 1, step: 0.05 },
+  { key: 'lift', label: 'SHADOW LIFT', min: 0, max: 1, step: 0.05 },
+  { key: 'color', label: 'COLOUR', min: 0, max: 1, step: 0.05 },
+  { key: 'tint', label: 'GREEN TINT', min: 0, max: 1.5, step: 0.05 },
+  { key: 'lensRain', label: 'LENS RAIN', min: 0, max: 1, step: 0.05 },
+];
+const TUNE_DEFAULTS = { ...GRADE_DEFAULTS, lensRain: 0.7 };
+const STORE = 'pak.grade';
+let tune = { ...TUNE_DEFAULTS };
+try {
+  tune = { ...tune, ...JSON.parse(localStorage.getItem(STORE) || '{}') };
+} catch {
+  /* storage unavailable: defaults it is */
+}
+
+function applyTune(save = true) {
+  pipeline.setGradeParams(tune);
+  world.lensRain?.setAmount(tune.lensRain);
+  for (const t of TUNE) {
+    $(`tune-${t.key}`).value = tune[t.key];
+    $(`tune-${t.key}-v`).textContent = Number(tune[t.key]).toFixed(2);
+  }
+  if (save) {
+    try {
+      localStorage.setItem(STORE, JSON.stringify(tune));
+    } catch {
+      /* not remembered, still applied */
+    }
+  }
+}
+
+for (const t of TUNE) {
+  const row = document.createElement('div');
+  row.className = 'tune-row';
+  row.innerHTML = `<label for="tune-${t.key}">${t.label}</label>
+    <input type="range" id="tune-${t.key}" min="${t.min}" max="${t.max}" step="${t.step}">
+    <output id="tune-${t.key}-v" for="tune-${t.key}"></output>`;
+  $('tune-rows').appendChild(row);
+  $(`tune-${t.key}`).addEventListener('input', (e) => {
+    tune[t.key] = Number(e.target.value);
+    applyTune();
+  });
+}
+// Keys typed into the panel must not drive the car.
+$('tune-panel').addEventListener('keydown', (e) => e.stopPropagation());
+$('tune').addEventListener('click', () => {
+  const open = $('tune-panel').hidden;
+  $('tune-panel').hidden = !open;
+  $('tune').setAttribute('aria-expanded', String(open));
+});
+$('tune-close').addEventListener('click', () => $('tune').click());
+$('tune-reset').addEventListener('click', () => {
+  tune = { ...TUNE_DEFAULTS };
+  applyTune();
+});
+$('tune-copy').addEventListener('click', () => {
+  const text = JSON.stringify(tune, null, 2);
+  const out = $('tune-out');
+  out.value = text;
+  out.hidden = false;
+  const done = () => {
+    $('tune-copy').textContent = 'COPIED';
+    setTimeout(() => ($('tune-copy').textContent = 'COPY'), 1500);
+  };
+  navigator.clipboard?.writeText(text).then(done, () => out.select()) ?? out.select();
+});
+
 // ---- Switching feeds -------------------------------------------------------
 
 let lastFrame = -1;
@@ -229,7 +306,7 @@ function setActive(entry) {
 }
 
 function syncHint() {
-  const common = 'DRAG TO LOOK · F TRACK · Z X ORBIT · SCROLL ZOOM';
+  const common = 'DRAG LOOK · F TRACK · Z X ORBIT · WHEEL ZOOM';
   $('hint').textContent = active.kind !== 'drone'
     ? 'ESC · BACK TO DRONE    TAB · NEXT CAMERA'
     : mode === 'car' ? `WASD DRIVE · SPACE HANDBRAKE · E GET OUT · ${common}`
@@ -368,6 +445,7 @@ function osd(elapsed) {
 
 setActive(drone);
 syncButtons();
+applyTune(false);
 let last = performance.now();
 let fpsAcc = 0;
 let fpsFrames = 0;
@@ -399,6 +477,7 @@ function frame(now) {
       world.rain?.setCenter(active.target[0], active.target[2]);
     }
     world.update(shot, renderer.domElement.height);
+    if (world.lensRain) world.lensRain.update(shot, active.camera, renderer.domElement.height);
     pipeline.render(shot, n);
   }
   osd(time);

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { factories } from './factories.js';
 import { createStreet } from '../engine/ground.js';
-import { Rain } from '../engine/rain.js';
+import { Rain, LensRain } from '../engine/rain.js';
 import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 import { buildDecoBlock } from './deco.js';
@@ -116,6 +116,8 @@ export class World {
       this.rain = new Rain({ center: [0, 0, 0], area: [90, 90], height: 34, wind: props.wind });
       this.rain.setLights(this.rainLights);
       this.scene.add(this.rain.group);
+      this.lensRain = new LensRain();
+      this.scene.add(this.lensRain.points);
       this.entities.set(id, { kind, object: this.rain.group });
       return;
     }

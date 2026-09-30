@@ -93,6 +93,48 @@
   body.mode-drone .cam-only { visibility: hidden; }
   .hint { font-size: 0.72em; text-align: center; }
 
+  /* Grade tuning: plain page controls on top of the picture, not part of it. */
+  .tune {
+    position: fixed;
+    right: 16px;
+    bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 56px);
+    width: min(340px, calc(100% - 32px));
+    padding: 10px 12px 12px;
+    background: rgba(3, 4, 5, 0.86);
+    border: 1px solid rgba(233, 239, 233, 0.25);
+    color: var(--osd);
+    font-family: var(--font-osd);
+    font-size: 19px;
+    letter-spacing: 0.05em;
+    z-index: 5;
+  }
+  .tune-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .tune-actions { display: flex; gap: 6px; }
+  .tune button {
+    font: inherit;
+    font-size: 16px;
+    color: var(--osd-dim);
+    background: transparent;
+    border: 1px solid rgba(233, 239, 233, 0.25);
+    padding: 0 8px;
+    cursor: pointer;
+  }
+  .tune button:focus-visible, .tune input:focus-visible { outline: 2px solid var(--osd); outline-offset: 2px; }
+  .tune-row { display: grid; grid-template-columns: 7.5em 1fr 3em; gap: 8px; align-items: center; }
+  .tune-row label { color: var(--osd-dim); white-space: nowrap; }
+  .tune-row output { text-align: right; font-variant-numeric: tabular-nums; }
+  .tune-row input { width: 100%; min-width: 0; accent-color: var(--osd); }
+  .tune textarea {
+    width: 100%;
+    margin-top: 8px;
+    height: 7.5em;
+    font: 14px ui-monospace, "Courier New", monospace;
+    background: #000;
+    color: var(--osd);
+    border: 1px solid rgba(233, 239, 233, 0.25);
+    resize: none;
+  }
+
   /* The hack: a terminal session typed over the snow while the feed connects. */
   #hack {
     position: fixed;
@@ -143,9 +185,23 @@
       <button type="button" id="q-high" data-tier="high" aria-pressed="false">HIGH</button>
       <button type="button" id="q-auto" data-tier="auto" aria-pressed="true">AUTO</button>
       <button type="button" id="grade" aria-pressed="true">GRADE</button>
+      <button type="button" id="tune" aria-expanded="false" aria-controls="tune-panel">TUNE</button>
     </div>
     <div class="stats dim" id="stats">-- FPS</div>
   </div>
+</div>
+
+<div id="tune-panel" class="tune" hidden role="group" aria-label="Grade settings">
+  <div class="tune-head">
+    <span>GRADE</span>
+    <span class="tune-actions">
+      <button type="button" id="tune-copy">COPY</button>
+      <button type="button" id="tune-reset">RESET</button>
+      <button type="button" id="tune-close" aria-label="Close">×</button>
+    </span>
+  </div>
+  <div id="tune-rows"></div>
+  <textarea id="tune-out" readonly hidden aria-label="Grade settings to copy"></textarea>
 </div>
 
 <div id="hack" hidden></div>

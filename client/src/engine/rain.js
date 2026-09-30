@@ -214,3 +214,108 @@ export class Rain {
     this.splashes.material.uniforms.uScale.value = viewportHeight * 0.9;
   }
 }
+
+// Rain that starts at the drone. Drops fall straight down past the lens:
+// close to it they are big soft out-of-focus blobs, streaked towards the
+// centre of the picture as they fall away, shrinking to specks over the
+// street. Lives on its own layer so the wet-street mirror doesn't see it.
+export const LENS_RAIN_LAYER = 1;
+
+export class LensRain {
+  constructor({ count = 900, depth = 70, seed = 77 } = {}) {
+    const r = rng(seed);
+    const seeds = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) seeds.set([r(), r(), r(), r()], i * 4);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 4));
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uCam: { value: new THREE.Vector3() },
+        uReach: { value: 0.5 }, // tan of half the field of view, widened for aspect
+        uDepth: { value: depth },
+        uScale: { value: 800 },
+        uAmount: { value: 1 },
+        uWind: { value: new THREE.Vector2(0.2, 0.06) },
+      },
+      vertexShader: /* glsl */ `
+        uniform float uTime, uReach, uDepth, uScale, uAmount;
+        uniform vec3 uCam;
+        uniform vec2 uWind;
+        attribute vec4 aSeed;
+        varying vec2 vDir;
+        varying float vStreak;
+        varying float vAlpha;
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+        void main() {
+          // Thin the drops out as the amount goes down.
+          if (aSeed.w > uAmount) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+          float speed = 10.0 + 6.0 * aSeed.w;
+          // Some drops only fall the first few metres under the lens (the
+          // big ones), the rest all the way down: a drop spends so little
+          // time near the lens that otherwise you would hardly ever see one.
+          float D = mix(5.0, uDepth, aSeed.y * aSeed.y);
+          float run = aSeed.z * D + uTime * speed;
+          float cycle = floor(run / D);
+          float fall = mod(run, D);                      // metres fallen since the top
+          // Each fall starts at a new spot across what the lens can see.
+          float sx = hash(cycle * 17.1 + aSeed.x * 91.7) * 2.0 - 1.0;
+          float sz = hash(cycle * 31.7 + aSeed.y * 53.3) * 2.0 - 1.0;
+          float spread = uReach * D * 0.7;
+          vec3 p = vec3(uCam.x + sx * spread + uWind.x * fall,
+                        uCam.y + 2.0 - fall,
+                        uCam.z + sz * spread + uWind.y * fall);
+          vec4 mv = viewMatrix * vec4(p, 1.0);
+          float d = -mv.z;
+          if (d < 0.15) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+          gl_Position = projectionMatrix * mv;
+          // Out of focus near the lens: bigger, fainter; a speck far away.
+          float size = uScale * (0.075 / d + 0.0015);
+          gl_PointSize = min(size, 180.0);
+          vAlpha = clamp(0.9 / (1.0 + d * 0.08), 0.05, 0.9) * (size > 180.0 ? 180.0 / size : 1.0);
+          vec2 ndc = gl_Position.xy / gl_Position.w;
+          vDir = length(ndc) > 0.001 ? normalize(ndc) : vec2(0.0, 1.0);
+          vStreak = clamp(10.0 / d, 1.8, 6.5);  // faster across the picture when close
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying vec2 vDir;
+        varying float vStreak;
+        varying float vAlpha;
+        void main() {
+          vec2 q = gl_PointCoord * 2.0 - 1.0;
+          q.y = -q.y;
+          // Stretch along the line to the centre: motion blur of the fall.
+          float along = dot(q, vDir);
+          float across = dot(q, vec2(-vDir.y, vDir.x));
+          float e = length(vec2(along, across * vStreak));
+          if (e > 1.0) discard;
+          float body = smoothstep(1.0, 0.2, e) * 0.22;
+          float rim = smoothstep(0.55, 0.85, e) * smoothstep(1.0, 0.85, e) * 0.55; // a bokeh edge
+          gl_FragColor = vec4(vec3(0.55, 0.68, 0.75) * (body + rim) * vAlpha, 1.0);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.points = new THREE.Points(geo, this.material);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 20;
+    this.points.layers.set(LENS_RAIN_LAYER);
+  }
+
+  update(time, camera, viewportHeight) {
+    const u = this.material.uniforms;
+    u.uTime.value = time;
+    u.uCam.value.copy(camera.position);
+    u.uReach.value = Math.tan((camera.fov * Math.PI) / 360) * Math.max(camera.aspect, 1);
+    u.uScale.value = viewportHeight;
+  }
+
+  setAmount(v) {
+    this.material.uniforms.uAmount.value = v;
+  }
+}
