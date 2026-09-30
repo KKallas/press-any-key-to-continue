@@ -21,10 +21,14 @@ function lightCone(color, radius, height, strength = 0.05) {
       varying float vFacing;
       uniform float uHeight;
       void main() {
-        vDown = -position.y / uHeight;
-        vec3 n = normalize(normalMatrix * normal);
+        vDown = clamp(-position.y / uHeight, 0.0, 1.0);
+        vec3 n = normalMatrix * normal;
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vFacing = abs(dot(n, normalize(-mv.xyz)));
+        vec3 v = -mv.xyz;
+        // No normalize() or pow() here: on Apple GPUs (Metal) they produced
+        // NaN at grazing angles, and the bloom smeared each NaN pixel into
+        // a large black box.
+        vFacing = abs(dot(n, v)) / max(length(n) * length(v), 1e-4);
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -34,7 +38,9 @@ function lightCone(color, radius, height, strength = 0.05) {
       varying float vDown;
       varying float vFacing;
       void main() {
-        float a = pow(vFacing, 1.6) * (1.0 - vDown) * (1.0 - vDown) * uStrength;
+        float f = clamp(vFacing, 0.0, 1.0);
+        float d = 1.0 - clamp(vDown, 0.0, 1.0);
+        float a = f * sqrt(f) * d * d * uStrength;
         gl_FragColor = vec4(uColor * a, 1.0);
       }
     `,
@@ -53,6 +59,41 @@ function faceRotation([fx, fz]) {
 }
 
 export const factories = {
+  'camera-housing'({ position, target, mount }) {
+    const group = new THREE.Group();
+    const metal = std(0x202326, { metalness: 0.4, roughness: 0.45 });
+    const p = new THREE.Vector3(...position);
+    const t = new THREE.Vector3(...target);
+    const body = new THREE.Group();
+    const shell = new THREE.Mesh(box(0.28, 0.24, 0.6), metal);
+    body.add(shell);
+    const hood = new THREE.Mesh(box(0.34, 0.04, 0.72), metal);
+    hood.position.y = 0.14;
+    body.add(hood);
+    const glass = new THREE.Mesh(new THREE.CircleGeometry(0.08, 14), new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.05, metalness: 0.8 }));
+    glass.position.z = -0.301;
+    glass.rotation.y = Math.PI;
+    body.add(glass);
+    // The tally light: a red dot that says someone is watching.
+    const tally = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), glow('#ff1a1a', 6));
+    tally.position.set(0.1, 0.06, -0.3);
+    body.add(tally);
+    body.position.copy(p);
+    body.lookAt(t);
+    body.rotateY(Math.PI); // the lens looks down -z
+    group.add(body);
+    if (mount === 'mast') {
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, p.y, 8), metal);
+      mast.position.set(p.x, p.y / 2, p.z);
+      group.add(mast);
+    } else {
+      const arm = new THREE.Mesh(box(0.06, 0.4, 0.06), metal);
+      arm.position.set(p.x, p.y + 0.3, p.z);
+      group.add(arm);
+    }
+    return { object: group };
+  },
+
   street({ size, roadWidth, sidewalk, curb }) {
     // The road surface itself is built by the engine (it needs the renderer
     // for reflections). Here: the four raised sidewalk corners and kerbs.

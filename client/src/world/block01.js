@@ -83,18 +83,75 @@ export const BLOCK_01 = [
   { t: 0, block: B, type: 'spawn', kind: 'person', id: 'p5',
     props: { x: -20.5, z: -6.0, umbrella: '#0f1113', coat: '#1a1c20', heading: 1.4 } },
 
-  // The camera itself is an entity in the world, with its own glass.
+  // Cameras are entities in the world, each with its own glass and its own
+  // cheap recording. The player hacks into them from the drone.
   { t: 0, block: B, type: 'spawn', kind: 'camera', id: 'CAM-07',
     props: {
       name: 'CAM 07',
-      description: 'BLOCK 01 · S-E CORNER',
+      description: 'BLOCK 01 · S-E MAST',
+      mount: 'mast',
       position: [25, 30, 27],
       target: [-4, 1, -7],
       fov: 46,
       lens: {
         barrel: 0.08, dirt: 1.0, noise: 0.35, aberration: 0.0022, drops: 1.0, crack: true, seed: 5,
-        // The recording: 400 lines, 12.5 fps, heavily compressed.
         lines: 400, fps: 12.5, compression: 0.8, glitch: 1.0,
+      },
+    } },
+  { t: 0, block: B, type: 'spawn', kind: 'camera', id: 'CAM-03',
+    props: {
+      name: 'CAM 03',
+      description: 'LAMP POST · N-W CORNER',
+      mount: 'pole',
+      position: [-6.2, 6.0, -6.0],
+      target: [-15, 0.6, -3],
+      fov: 72,
+      lens: {
+        barrel: 0.2, dirt: 1.3, noise: 0.55, aberration: 0.003, drops: 1.0, crack: false, seed: 17,
+        lines: 300, fps: 10, compression: 0.95, glitch: 1.6,
+      },
+    } },
+  { t: 0, block: B, type: 'spawn', kind: 'camera', id: 'CAM-11',
+    props: {
+      name: 'CAM 11',
+      description: 'BAAR ENTRANCE',
+      mount: 'wall',
+      position: [9.3, 7.2, -9.3],
+      target: [1, 0.5, 1],
+      fov: 56,
+      lens: {
+        barrel: 0.05, dirt: 0.4, noise: 0.25, aberration: 0.0015, drops: 0.3, crack: false, seed: 23,
+        lines: 480, fps: 15, compression: 0.6, glitch: 0.5,
+      },
+    } },
+  { t: 0, block: B, type: 'spawn', kind: 'camera', id: 'CAM-14',
+    props: {
+      name: 'CAM 14',
+      description: '24H · S-W CORNER',
+      mount: 'wall',
+      position: [-9.3, 5.5, 9.3],
+      target: [5, 0.5, -5],
+      fov: 60,
+      lens: {
+        barrel: 0.12, dirt: 0.9, noise: 0.45, aberration: 0.0025, drops: 0.6, crack: true, seed: 31,
+        lines: 360, fps: 12.5, compression: 0.85, glitch: 1.2,
+      },
+    } },
+
+  // The player's own eye: a drone circling high over the block.
+  { t: 0, block: B, type: 'spawn', kind: 'drone', id: 'UAV-2',
+    props: {
+      name: 'UAV-2',
+      description: 'EO NIGHT · WIDE',
+      target: [0, 0, 0],
+      altitude: 150,
+      elevation: 62,
+      fov: 16,
+      orbitSpeed: 0.03,
+      fog: 0.0032,
+      lens: {
+        barrel: 0.0, dirt: 0.15, noise: 0.3, aberration: 0.0008, drops: 0, crack: false, seed: 2,
+        lines: 480, fps: 25, compression: 0.9, glitch: 0.35,
       },
     } },
 ];

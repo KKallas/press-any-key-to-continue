@@ -36,7 +36,7 @@
     pointer-events: none;
     padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr auto auto;
     font-size: clamp(18px, 2.4vw, 28px);
     letter-spacing: 0.06em;
     text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 1);
@@ -82,6 +82,90 @@
   .controls button[aria-pressed="true"] { color: var(--osd); border-color: var(--osd); }
   .controls button:focus-visible { outline: 2px solid var(--osd); outline-offset: 2px; }
   .stats { font-size: 0.8em; font-variant-numeric: tabular-nums; }
+  /* Drone symbology: crosshair, corner brackets, telemetry. Shown only in drone mode. */
+  .drone-only { display: none; }
+  body.mode-drone .drone-only { display: block; }
+  body.mode-drone .cam-only { display: none; }
+  .reticle {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 120px;
+    height: 120px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .reticle::before, .reticle::after {
+    content: "";
+    position: absolute;
+    background: var(--osd);
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+  }
+  .reticle::before { left: 0; right: 0; top: 50%; height: 1px; mask: linear-gradient(90deg, #000 40%, transparent 40%, transparent 60%, #000 60%); -webkit-mask: linear-gradient(90deg, #000 40%, transparent 40%, transparent 60%, #000 60%); }
+  .reticle::after { top: 0; bottom: 0; left: 50%; width: 1px; mask: linear-gradient(180deg, #000 40%, transparent 40%, transparent 60%, #000 60%); -webkit-mask: linear-gradient(180deg, #000 40%, transparent 40%, transparent 60%, #000 60%); }
+  .frame-brackets {
+    position: fixed;
+    inset: 12%;
+    pointer-events: none;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(var(--osd), var(--osd)) top left / 28px 1px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) top left / 1px 28px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) top right / 28px 1px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) top right / 1px 28px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) bottom left / 28px 1px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) bottom left / 1px 28px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) bottom right / 28px 1px no-repeat,
+      linear-gradient(var(--osd), var(--osd)) bottom right / 1px 28px no-repeat;
+    opacity: 0.7;
+  }
+  .telemetry { font-variant-numeric: tabular-nums; line-height: 1.15; white-space: pre; margin-top: 0.3em; }
+  .hint { font-size: 0.72em; text-align: center; }
+
+  /* Hackable cameras, marked on the drone feed. */
+  #markers { position: fixed; inset: 0; pointer-events: none; }
+  .cam-marker {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    font: inherit;
+    font-size: clamp(15px, 1.6vw, 20px);
+    letter-spacing: 0.06em;
+    color: var(--osd);
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 1);
+  }
+  .cam-marker .box {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--osd);
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+  }
+  .cam-marker:hover .box, .cam-marker:focus-visible .box { border-color: var(--rec); background: rgba(255, 42, 42, 0.18); }
+  .cam-marker:focus-visible { outline: none; }
+
+  /* The hack: a terminal session typed over the snow while the feed connects. */
+  #hack {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(560px, calc(100% - 32px));
+    padding: 14px 18px;
+    background: rgba(3, 4, 5, 0.82);
+    color: var(--osd);
+    font-size: clamp(18px, 2vw, 24px);
+    white-space: pre-wrap;
+    pointer-events: none;
+  }
+
   .err {
     position: fixed;
     inset: 0;
@@ -94,14 +178,19 @@
   }
 </style>
 
-<canvas id="feed" aria-label="Surveillance camera view of a rainy street at night"></canvas>
+<canvas id="feed" aria-label="Drone and surveillance camera views of a rainy street at night"></canvas>
+
+<div class="reticle drone-only" aria-hidden="true"></div>
+<div class="frame-brackets drone-only" aria-hidden="true"></div>
+<div id="markers" class="drone-only"></div>
 
 <div class="osd" aria-live="off">
   <div class="osd-top">
     <div>
       <div class="rec"><span class="rec-dot" id="rec-dot"></span><span>REC</span></div>
-      <div id="cam-name">CAM 07</div>
-      <div class="dim" id="cam-desc">BLOCK 01 · N-E CORNER</div>
+      <div id="cam-name">UAV-2</div>
+      <div class="dim" id="cam-desc">EO NIGHT · WIDE</div>
+      <div class="telemetry dim drone-only" id="telemetry"></div>
     </div>
     <div class="clock">
       <div id="date">31.12.1999</div>
@@ -109,6 +198,7 @@
     </div>
   </div>
   <div></div>
+  <div class="hint dim" id="hint"></div>
   <div class="osd-bottom">
     <div class="controls" role="toolbar" aria-label="Render quality">
       <button type="button" id="q-low" data-tier="low" aria-pressed="false">LOW</button>
@@ -120,6 +210,8 @@
     <div class="stats dim" id="stats">-- FPS</div>
   </div>
 </div>
+
+<div id="hack" hidden></div>
 
 <div class="err" id="err" hidden>NO SIGNAL<br><span class="dim" id="err-detail"></span></div>
 

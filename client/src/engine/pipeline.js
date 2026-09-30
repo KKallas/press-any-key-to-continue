@@ -33,6 +33,7 @@ const CameraShader = {
     uFrame: { value: 0 },
     uCompress: { value: 0.8 },
     uGlitch: { value: 1.0 },
+    uLoss: { value: 0.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -42,7 +43,7 @@ const CameraShader = {
     uniform sampler2D tDiffuse, tBloom, tDirt, tDrops;
     uniform float uTime, uAspect, uExposure, uBarrel, uAberration, uDirt, uDrops, uNoise, uGrade;
     uniform vec2 uRes, uVideoRes;
-    uniform float uField, uFrame, uCompress, uGlitch;
+    uniform float uField, uFrame, uCompress, uGlitch, uLoss;
     varying vec2 vUv;
 
     float hash12(vec2 p) {
@@ -160,7 +161,14 @@ const CameraShader = {
       col *= mix(1.0, 0.8, odd * uNoise * 1.6);
       float band = smoothstep(0.0, 0.04, abs(fract(vUv.y + t * 0.07) - 0.5) - 0.02);
       col *= mix(1.04, 1.0, band);
-      col *= 1.0 - 0.55 * pow(length(c * vec2(1.0, 0.85)) * 1.25, 2.4);
+      col *= 1.0 - 0.55 * pow(max(length(c * vec2(1.0, 0.85)) * 1.25, 1e-4), 2.4);
+
+      // Signal loss: snow and rolling bars while a feed connects.
+      if (uLoss > 0.0) {
+        float snow = hash12(px * 1.37 + fract(uFrame * 0.731) * 311.0);
+        float roll = step(0.6, fract(vUv.y * 2.5 - uTime * 1.7)) * 0.18;
+        col = mix(col, vec3(snow * 0.75 + roll), uLoss);
+      }
 
       // Outside the distorted frame the housing is black.
       if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) col = vec3(0.0);
@@ -220,6 +228,10 @@ export class Pipeline {
 
     this.composer = composer;
     this.cameraPass = cam;
+  }
+
+  setLoss(v) {
+    if (this.cameraPass) this.cameraPass.uniforms.uLoss.value = v;
   }
 
   setGrade(on) {

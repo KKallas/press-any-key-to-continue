@@ -36,16 +36,25 @@ export class World {
   spawn({ id, kind, props }) {
     if (this.entities.has(id)) this.despawn(id);
 
-    if (kind === 'camera') {
-      const cam = new THREE.PerspectiveCamera(props.fov, 1, 0.5, 400);
-      cam.position.set(...props.position);
-      cam.lookAt(new THREE.Vector3(...props.target));
-      this.cameras.set(id, { id, camera: cam, ...props });
+    if (kind === 'camera' || kind === 'drone') {
+      const cam = new THREE.PerspectiveCamera(props.fov, 1, 0.5, kind === 'drone' ? 1200 : 400);
+      const entry = { id, kind, camera: cam, ...props };
+      if (kind === 'camera') {
+        cam.position.set(...props.position);
+        cam.lookAt(new THREE.Vector3(...props.target));
+        const housing = factories['camera-housing'](props);
+        this.scene.add(housing.object);
+        entry.housing = housing.object;
+        entry.anchor = new THREE.Vector3(...props.position);
+        this.entities.set(id, { kind, object: housing.object });
+      }
+      this.cameras.set(id, entry);
       return;
     }
 
     if (kind === 'weather') {
       this.scene.fog = new THREE.FogExp2(0x0b1519, props.fog);
+      this.baseFog = props.fog;
       this.rain = new Rain({ center: [0, 0, 0], area: [80, 80], height: 34, wind: props.wind });
       this.rain.setLights(this.rainLights);
       this.scene.add(this.rain.group);
@@ -72,6 +81,12 @@ export class World {
       this.rain?.setLights(this.rainLights);
     }
     this.entities.set(id, { kind, ...built });
+  }
+
+  // Haze depends on where you look from: thick at street level, thin from altitude.
+  useCamera(entry) {
+    if (this.scene.fog) this.scene.fog.density = entry.fog ?? this.baseFog;
+    for (const c of this.cameras.values()) if (c.housing) c.housing.visible = c !== entry;
   }
 
   despawn(id) {
