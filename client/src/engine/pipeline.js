@@ -257,7 +257,6 @@ export class Pipeline {
     cam.uniforms.uDrops.value = tier.drops ? lens.drops : 0;
     cam.uniforms.uNoise.value = lens.noise;
     cam.uniforms.uGrade.value = this.grade ? 1 : 0;
-    this.applyGradeParams();
     const lines = lens.lines ?? 400;
     // CCTV pixels are wider than they are tall.
     cam.uniforms.uVideoRes.value.set(Math.round(lines * (width / height) * 0.8), lines);
@@ -268,6 +267,7 @@ export class Pipeline {
     this.composer = composer;
     this.cameraPass = cam;
     this.setHud(this.hud ?? null);
+    this.applyGradeParams();
   }
 
   // The drone's symbology texture, or null for none.
