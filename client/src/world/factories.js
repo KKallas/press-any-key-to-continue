@@ -325,7 +325,7 @@ export const factories = {
     const colors = { red: '#ff2020', amber: '#ffa020', green: '#30ff80' };
     ['red', 'amber', 'green'].forEach((c, i) => {
       const lit = c === state;
-      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), lit ? glow(colors[c], 8) : std(0x050505));
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), lit ? glow(colors[c], 4) : std(0x050505));
       lens.position.set(0, 4.35 - i * 0.35, 0.18);
       group.add(lens);
     });

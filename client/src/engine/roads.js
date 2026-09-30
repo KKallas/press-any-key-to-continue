@@ -79,6 +79,25 @@ export class RoadGraph {
     return best;
   }
 
+  // The real junctions: nodes where two or more streets meet, with the
+  // direction and width of each arm. Used to paint crossings and stand up
+  // traffic lights.
+  junctions() {
+    const out = [];
+    for (let k = 0; k < this.nodes.length; k++) {
+      const arms = this.adj[k];
+      if (arms.length < 2) continue;
+      const [x, z] = this.nodes[k];
+      const list = arms.map(({ to, edge }) => {
+        const o = this.nodes[to];
+        const L = Math.hypot(o[0] - x, o[1] - z) || 1;
+        return { dx: (o[0] - x) / L, dz: (o[1] - z) / L, width: this.edges[edge].width, len: L };
+      });
+      out.push({ x, z, arms: list, degree: arms.length });
+    }
+    return out;
+  }
+
   // A drive from `from` (facing `heading`) to the kerb nearest `to`, on the
   // right-hand side of the road. Returns { pts, park, heading } or null.
   route(from, heading, to) {

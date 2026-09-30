@@ -133,7 +133,7 @@ const walker = new WalkerControl({
 // Route planning: a coarse grid for the car, a finer one for a person.
 const carNav = new NavGrid({ bounds: world.bounds, free: world.carFree, surface: world.surface, green: world.green, cell: 1 });
 // The street network, for driving in lane like everyone else.
-const roads = world.roadLines ? new RoadGraph(world.roadLines, world.bounds) : null;
+const roads = world.roadGraph ?? (world.roadLines ? new RoadGraph(world.roadLines, world.bounds) : null);
 const footNav = new NavGrid({ bounds: world.bounds, free: world.footFree, surface: world.surface, cell: 0.5 });
 const autopilot = new Autopilot({
   car,
@@ -166,6 +166,29 @@ const mapScreen = world.blockPolys
   : null;
 const snow = new Snow([...document.querySelectorAll('canvas.snow')]);
 const sound = new Sound();
+
+// Traffic lights at the busier junctions: one on a corner, off the
+// carriageway. Cheap static lenses, their colour set from the spot so the
+// junctions aren't all in step.
+if (roads && world.junctions) {
+  const phases = ['red', 'green', 'amber'];
+  let tl = 0;
+  for (const j of world.junctions) {
+    if (j.degree < 3) continue;
+    // A corner: between two arms, pushed out past the kerb.
+    const a0 = j.arms[0];
+    const a1 = j.arms[1 % j.arms.length];
+    let bx = -(a0.dx + a1.dx);
+    let bz = -(a0.dz + a1.dz);
+    const bl = Math.hypot(bx, bz) || 1;
+    const R = Math.max(...j.arms.map((a) => a.width)) / 2 + 1.4;
+    const x = j.x + (bx / bl) * R;
+    const z = j.z + (bz / bl) * R;
+    if (!world.carFree(x, z) && world.footFree && !world.footFree(x, z)) continue;
+    server.append({ block: BLOCK, type: 'spawn', kind: 'traffic-light', id: `tl${tl}`, props: { x, z, state: phases[tl % phases.length] } });
+    tl++;
+  }
+}
 
 droneControl.limit = world.limit ?? 70;
 droneControl.lock = () =>

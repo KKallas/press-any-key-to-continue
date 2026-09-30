@@ -424,59 +424,203 @@ function building(plot, B) {
   return outline;
 }
 
-// The clutter every real roof has: air-conditioning units, chimneys, vents,
-// antennas and the odd satellite dish. On a stepped tower it sits on the
-// podium roof, round the foot of the first setback; on a plain block, round
-// the edge of the roof.
+// Rooftops, made for the one angle that matters: straight down from a drone.
+// A roof you only see from above is mostly its deck — so that's where the work
+// goes. A parapet gives it a lip. The deck is wet: black puddles that catch
+// the light, the biggest thing you see. Skylights glow. A painted sign or a
+// billboard names the building. A fire escape zigzags down one wall. The old
+// clutter — AC, tanks, vents, an antenna — is still there, but sparser, so the
+// water and the signs read.
+const METAL = new THREE.Color(0.2, 0.21, 0.22);
+const DARKMETAL = new THREE.Color(0.08, 0.08, 0.085);
+const BRICK = new THREE.Color(0.22, 0.1, 0.07);
+const PUDDLE = new THREE.Color(0.02, 0.05, 0.07); // wet sheen, faintly lit so it blooms
+const DECK = new THREE.Color(0.16, 0.165, 0.17); // gravel/felt, lighter than the old near-black
+const SIGN_COLORS = [
+  [2.6, 0.5, 1.6], [0.4, 1.8, 2.6], [2.8, 1.2, 0.3], [2.4, 0.4, 0.5], [0.6, 2.4, 1.2],
+];
+
+// A rectangle of points, centred at (cx,cz), size sx×sz, turned by ang.
+function rect(cx, cz, sx, sz, ang) {
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  const hx = sx / 2;
+  const hz = sz / 2;
+  return [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([x, z]) => [cx + x * c - z * s, cz + x * s + z * c]);
+}
+
 function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, roofCol) {
-  const metal = new THREE.Color(0.2, 0.21, 0.22);
-  const dark = new THREE.Color(0.08, 0.08, 0.085);
-  const brick = new THREE.Color(0.22, 0.1, 0.07);
-  const area = Math.abs(signedArea(fp));
+  // The clutter that stands on a deck: fewer of them now, so the deck shows.
   const place = (pts, y, avoid, count, kinds) => {
     const c = centroid(pts);
     for (let k = 0, tries = 0; k < count && tries < count * 8; tries++) {
       const v = pts[Math.floor(r() * pts.length)];
       const w = pts[Math.floor(r() * pts.length)];
-      const u = 0.55 + r() * 0.33;
+      const u = 0.5 + r() * 0.38;
       const m = 0.5 + r() * 0.5;
       const p = [c[0] + ((v[0] + (w[0] - v[0]) * m * 0.3) - c[0]) * u, c[1] + ((v[1] + (w[1] - v[1]) * m * 0.3) - c[1]) * u];
       if (!inside(p, pts) || (avoid && inside(p, avoid))) continue;
       k++;
       const ang = r() * Math.PI;
       const kind = kinds[Math.floor(r() * kinds.length)];
-      if (kind === 'ac') {
-        B.trim.box(p[0], y + 0.45, p[1], 1.3, 0.9, 0.9, ang, metal);
-        B.roof.box(p[0], y + 0.92, p[1], 0.7, 0.05, 0.7, ang, dark); // the fan grille
-      } else if (kind === 'chimney') {
-        const h = 1.4 + r() * 1.6;
-        B.roof.box(p[0], y + h / 2, p[1], 0.7, h, 0.7, ang, brick);
-        B.roof.box(p[0], y + h + 0.05, p[1], 0.8, 0.1, 0.8, ang, dark);
+      if (kind === 'puddle') {
+        // An irregular pool, a few centimetres above the deck so it reads as water.
+        const rad = 0.9 + r() * 2.2;
+        const poly = [];
+        const sides = 7 + Math.floor(r() * 3);
+        for (let a = 0; a < sides; a++) {
+          const t = (a / sides) * Math.PI * 2;
+          const rr = rad * (0.6 + r() * 0.5);
+          poly.push([p[0] + Math.cos(t) * rr, p[1] + Math.sin(t) * rr * (0.7 + r() * 0.3)]);
+        }
+        if (poly.every((q) => inside(q, pts))) B.glow.cap ? B.glow.cap(poly, y + 0.03, PUDDLE) : null;
+      } else if (kind === 'skylight') {
+        // A run of pitched glass, glowing from the floor below.
+        const cols = 1 + Math.floor(r() * 3);
+        const warm = r() < 0.5;
+        const col = warm ? new THREE.Color(0.5, 0.42, 0.28) : new THREE.Color(0.3, 0.4, 0.46);
+        for (let c2 = 0; c2 < cols; c2++) {
+          const q = [p[0] + Math.cos(ang) * c2 * 1.5, p[1] + Math.sin(ang) * c2 * 1.5];
+          if (!inside(q, pts)) break;
+          B.trim.box(q[0], y + 0.18, q[1], 1.2, 0.36, 1.0, ang, METAL); // frame
+          B.glow.cap(rect(q[0], q[1], 0.95, 0.75, ang), y + 0.37, col); // glass
+        }
+      } else if (kind === 'ac') {
+        B.trim.box(p[0], y + 0.45, p[1], 1.3, 0.9, 0.9, ang, METAL);
+        B.roof.box(p[0], y + 0.92, p[1], 0.7, 0.05, 0.7, ang, DARKMETAL);
       } else if (kind === 'vent') {
-        B.trim.box(p[0], y + 0.5, p[1], 0.35, 1, 0.35, 0, metal);
-        B.trim.box(p[0], y + 1.05, p[1], 0.55, 0.1, 0.55, 0, metal);
+        B.trim.box(p[0], y + 0.5, p[1], 0.35, 1, 0.35, 0, METAL);
+        B.trim.box(p[0], y + 1.05, p[1], 0.55, 0.1, 0.55, 0, METAL);
+      } else if (kind === 'chimney') {
+        const h = 1.4 + r() * 1.4;
+        B.roof.box(p[0], y + h / 2, p[1], 0.7, h, 0.7, ang, BRICK);
+        B.roof.box(p[0], y + h + 0.05, p[1], 0.8, 0.1, 0.8, ang, DARKMETAL);
       } else if (kind === 'antenna') {
         const h = 4 + r() * 6;
-        B.trim.box(p[0], y + h / 2, p[1], 0.07, h, 0.07, 0, metal);
-        for (let b = 0; b < 3; b++) B.trim.box(p[0], y + h * (0.55 + b * 0.15), p[1], 1.6 - b * 0.4, 0.04, 0.04, ang, metal);
-        if (r() < 0.35) B.glow.box(p[0], y + h + 0.1, p[1], 0.14, 0.14, 0.14, 0, new THREE.Color(1, 0.04, 0.03));
+        B.trim.box(p[0], y + h / 2, p[1], 0.07, h, 0.07, 0, METAL);
+        for (let b = 0; b < 3; b++) B.trim.box(p[0], y + h * (0.55 + b * 0.15), p[1], 1.6 - b * 0.4, 0.04, 0.04, ang, METAL);
+        if (r() < 0.4) B.glow.box(p[0], y + h + 0.1, p[1], 0.14, 0.14, 0.14, 0, new THREE.Color(1, 0.04, 0.03));
       } else if (kind === 'dish') {
-        B.trim.box(p[0], y + 0.5, p[1], 0.1, 1, 0.1, 0, metal);
+        B.trim.box(p[0], y + 0.5, p[1], 0.1, 1, 0.1, 0, METAL);
         B.trim.box(p[0], y + 1.1, p[1], 1.1, 0.8, 0.08, ang, new THREE.Color(0.32, 0.32, 0.3));
       } else if (kind === 'tank') {
-        for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) B.trim.box(p[0] + dx, y + 1, p[1] + dz, 0.12, 2, 0.12, 0, dark);
+        for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) B.trim.box(p[0] + dx, y + 1, p[1] + dz, 0.12, 2, 0.12, 0, DARKMETAL);
         B.roof.box(p[0], y + 3, p[1], 2.2, 2, 2.2, ang, new THREE.Color(0.18, 0.13, 0.09));
-        B.roof.box(p[0], y + 4.1, p[1], 2.4, 0.2, 2.4, ang, dark);
+        B.roof.box(p[0], y + 4.1, p[1], 2.4, 0.2, 2.4, ang, DARKMETAL);
       }
     }
   };
-  const n = Math.min(10, 2 + Math.floor(area / 90));
+
+  // Dress one roof deck: a parapet lip, a lighter deck, then puddles and
+  // signage before the hard clutter. `top` says whether this is the very top
+  // (which gets the sign and the most water) or a lower podium roof.
+  const deck = (pts, y, avoid, top) => {
+    const a = Math.abs(signedArea(pts));
+    if (a < 20) return;
+    // Parapet: a low wall just inside the edge.
+    for (let i = 0; i < pts.length; i++) {
+      const p0 = pts[i];
+      const p1 = pts[(i + 1) % pts.length];
+      const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+      const nx = -(p1[1] - p0[1]) / L;
+      const nz = (p1[0] - p0[0]) / L; // inward is -n for CCW; parapet sits on the edge
+      const mx = (p0[0] + p1[0]) / 2 - nx * 0.15;
+      const mz = (p0[1] + p1[1]) / 2 - nz * 0.15;
+      B.trim.box(mx, y + 0.35, mz, L, 0.7, 0.3, Math.atan2(-(p1[1] - p0[1]), p1[0] - p0[0]), DECK.clone().multiplyScalar(0.7));
+    }
+    // A lighter gravel deck laid just over the structural cap.
+    const inset = pts.map((p) => [cen[0] + (p[0] - cen[0]) * 0.92, cen[1] + (p[1] - cen[1]) * 0.92]);
+    B.roof.cap(inset, y + 0.02, DECK);
+
+    // Puddles first and most — the roof is wet.
+    place(pts, y, avoid, Math.max(2, Math.floor(a / 60)), ['puddle', 'puddle', 'puddle']);
+    // Skylights.
+    if (a > 45) place(pts, y, avoid, 1 + Math.floor(a / 220), ['skylight', 'skylight', 'puddle']);
+    // Signage on the top deck.
+    if (top && a > 60) sign(B, r, cen, y, pts);
+    // Then the hard clutter, sparser than before.
+    place(pts, y, avoid, Math.min(5, 1 + Math.floor(a / 160)), ['ac', 'vent', 'chimney', 'dish', 'tank', 'antenna']);
+  };
+
   if (firstTier) {
-    place(fp, podiumTop, firstTier, n, ['ac', 'ac', 'vent', 'chimney', 'tank', 'dish']);
-    if (crown !== 'spire') place(topRect, tierTop, crown === 'ziggurat' ? topRect.map((q) => [cen[0] + (q[0] - cen[0]) * 0.8, cen[1] + (q[1] - cen[1]) * 0.8]) : null, 2, ['antenna', 'ac', 'vent']);
+    deck(fp, podiumTop, firstTier, false);
+    if (crown !== 'spire') deck(topRect, tierTop, crown === 'ziggurat' ? topRect.map((q) => [cen[0] + (q[0] - cen[0]) * 0.8, cen[1] + (q[1] - cen[1]) * 0.8]) : null, true);
+    // A fire escape zigzagging down the podium's tallest free wall.
+    fireEscape(B, r, fp, cen, podiumTop);
   } else {
     const avoid = crown === 'ziggurat' ? fp.map((q) => [cen[0] + (q[0] - cen[0]) * 0.8, cen[1] + (q[1] - cen[1]) * 0.8]) : null;
-    place(fp, podiumTop, avoid, n, ['ac', 'ac', 'vent', 'chimney', 'antenna', 'dish', 'tank']);
+    deck(fp, podiumTop, avoid, true);
+    fireEscape(B, r, fp, cen, podiumTop);
+  }
+}
+
+// A rooftop sign: on a tall enough roof, a raised billboard on legs whose face
+// glows; otherwise a bright band painted flat on the deck.
+function sign(B, r, cen, y, pts) {
+  const col = new THREE.Color(...SIGN_COLORS[Math.floor(r() * SIGN_COLORS.length)]);
+  const ang = r() * Math.PI;
+  if (r() < 0.5) {
+    // Painted on the deck: a long bright bar (a name from above).
+    const bar = rect(cen[0], cen[1], 5 + r() * 4, 0.9, ang);
+    if (bar.every((q) => inside(q, pts))) B.glow.cap(bar, y + 0.05, col.clone().multiplyScalar(0.7));
+  } else {
+    // A billboard on legs, catching the eye from an oblique pass.
+    const w = 4 + r() * 3;
+    const h = 1.6 + r() * 0.8;
+    const legY = y + 0.9;
+    for (const s of [-1, 1]) {
+      const lx = cen[0] + Math.cos(ang) * (w / 2) * s;
+      const lz = cen[1] + Math.sin(ang) * (w / 2) * s;
+      if (!inside([lx, lz], pts)) return;
+      B.trim.box(lx, legY, lz, 0.12, 1.8, 0.12, ang, DARKMETAL);
+    }
+    B.trim.box(cen[0], legY + 0.9 + h / 2, cen[1], w, h, 0.15, ang, DARKMETAL); // backing
+    B.glow.box(cen[0], legY + 0.9 + h / 2, cen[1] + 0.09, w * 0.94, h * 0.82, 0.06, ang, col); // lit face
+  }
+}
+
+// A fire escape down one wall: switchback landings, treads between them, and a
+// rail line. Reads as a ladder pattern from the drone.
+function fireEscape(B, r, fp, cen, top) {
+  // The longest edge, so there's room for the switchbacks.
+  let best = -1;
+  let bi = 0;
+  for (let i = 0; i < fp.length; i++) {
+    const a = fp[i];
+    const b = fp[(i + 1) % fp.length];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L > best) {
+      best = L;
+      bi = i;
+    }
+  }
+  if (best < 5) return;
+  const a = fp[bi];
+  const b = fp[(bi + 1) % fp.length];
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const dx = (b[0] - a[0]) / L;
+  const dz = (b[1] - a[1]) / L;
+  const nx = -dz;
+  const nz = dx; // outward for CCW footprint
+  const ang = Math.atan2(-dz, dx);
+  const midT = 0.5 + (r() - 0.5) * 0.3;
+  const bx = a[0] + dx * L * midT;
+  const bz = a[1] + dz * L * midT;
+  const floors = Math.min(7, Math.max(3, Math.floor(top / FLOOR)));
+  const dark = new THREE.Color(0.09, 0.095, 0.1);
+  for (let f = 1; f <= floors; f++) {
+    const y = top - f * FLOOR + 0.2;
+    const side = f % 2 === 0 ? 1 : -1;
+    const cxp = bx + dx * 1.4 * side + nx * 0.7;
+    const czp = bz + dz * 1.4 * side + nz * 0.7;
+    // Landing.
+    B.trim.box(cxp, y, czp, 2.4, 0.12, 1.1, ang, dark);
+    // Rail along the outer edge.
+    B.trim.box(cxp + nx * 0.5, y + 0.5, czp + nz * 0.5, 2.4, 0.06, 0.06, ang, METAL);
+    // A flight of treads down to the next landing.
+    for (let s = 0; s < 4; s++) {
+      B.trim.box(cxp - dx * side * (0.6 + s * 0.35), y - 0.25 - s * (FLOOR - 0.4) / 4, czp - dz * side * (0.6 + s * 0.35), 0.5, 0.05, 0.9, ang, METAL);
+    }
   }
 }
 

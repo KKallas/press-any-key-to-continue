@@ -161,7 +161,7 @@ export function markingsTexture(size, roadWidth, roads, seed) {
 // Road markings for real, irregular streets: a dashed centre line on
 // two-way roads and a faint edge line either side. Covers a square of
 // `size` metres centred on the origin, like the street surface.
-export function roadMarkingsTexture(size, roads, seed) {
+export function roadMarkingsTexture(size, roads, seed, junctions = []) {
   const px = 2048;
   const [c, g] = canvas(px, px);
   const r = rng(seed);
@@ -199,6 +199,83 @@ export function roadMarkingsTexture(size, roads, seed) {
       g.globalAlpha = 1;
     }
   }
+
+  // Parking bays: short ticks square to the kerb, in runs along the outer edge
+  // of the wider streets, kept clear of the junctions.
+  g.setLineDash([]);
+  g.lineWidth = Math.max(1, 0.1 * m);
+  g.globalAlpha = 0.4;
+  for (const road of roads) {
+    if (road.width < 9) continue;
+    for (let i = 0; i < road.points.length - 1; i++) {
+      const a = road.points[i];
+      const b = road.points[i + 1];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 26) continue;
+      const dx = (b[0] - a[0]) / L;
+      const dz = (b[1] - a[1]) / L;
+      const nx = -dz;
+      const nz = dx;
+      for (const side of [-1, 1]) {
+        if (r() < 0.4) continue;
+        const off = road.width / 2 - 0.4;
+        const bay = 2.4;
+        for (let d = 10 + r() * 6; d < L - 10; d += bay) {
+          const cx0 = a[0] + dx * d + nx * off * side;
+          const cz0 = a[1] + dz * d + nz * off * side;
+          const inner = 2.2;
+          g.beginPath();
+          const p0 = P([cx0, cz0]);
+          const p1 = P([cx0 - nx * inner * side, cz0 - nz * inner * side]);
+          g.moveTo(p0[0], p0[1]);
+          g.lineTo(p1[0], p1[1]);
+          g.stroke();
+        }
+      }
+    }
+  }
+  g.globalAlpha = 1;
+
+  // Junctions: a zebra crossing across each arm, a stop line behind it, and a
+  // faint box-junction crosshatch in the middle where the streets meet.
+  for (const j of junctions) {
+    const R = Math.max(...j.arms.map((a) => a.width)) / 2 + 1;
+    for (const arm of j.arms) {
+      const back = R + 1.2; // clear of the middle
+      const cx = j.x + arm.dx * back;
+      const cz = j.z + arm.dz * back;
+      const nx = -arm.dz;
+      const nz = arm.dx;
+      const half = arm.width / 2 - 0.4;
+      // Zebra: stripes laid along the direction of travel, across the road.
+      const bars = Math.max(3, Math.floor(arm.width / 0.9));
+      g.globalAlpha = 0.85;
+      for (let s = 0; s < bars; s++) {
+        const t = (s + 0.5) / bars;
+        const px0 = cx + nx * (t * 2 - 1) * half;
+        const pz0 = cz + nz * (t * 2 - 1) * half;
+        const q0 = P([px0 - arm.dx * 1.3, pz0 - arm.dz * 1.3]);
+        const q1 = P([px0 + arm.dx * 1.3, pz0 + arm.dz * 1.3]);
+        g.lineWidth = Math.max(1.5, 0.32 * m);
+        g.beginPath();
+        g.moveTo(q0[0], q0[1]);
+        g.lineTo(q1[0], q1[1]);
+        g.stroke();
+      }
+      // Stop line just behind the crossing.
+      const sx = j.x + arm.dx * (back + 1.8);
+      const sz = j.z + arm.dz * (back + 1.8);
+      g.lineWidth = Math.max(2, 0.4 * m);
+      g.beginPath();
+      const e0 = P([sx - nx * half, sz - nz * half]);
+      const e1 = P([sx + nx * half, sz + nz * half]);
+      g.moveTo(e0[0], e0[1]);
+      g.lineTo(e1[0], e1[1]);
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+  }
+
   g.globalCompositeOperation = 'destination-out';
   for (let i = 0; i < 3200; i++) {
     g.globalAlpha = 0.25 + r() * 0.6;

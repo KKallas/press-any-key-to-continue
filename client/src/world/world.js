@@ -10,6 +10,7 @@ import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 import { inside, buildDecoBlock } from './deco.js';
 import { collisionMap } from '../engine/collision.js';
 import { greenMap, grassMesh } from '../engine/greens.js';
+import { RoadGraph } from '../engine/roads.js';
 import { buildProps } from './props.js';
 
 // Road surface of a generated city as a bitmap, 2 px per metre: the blocks
@@ -152,7 +153,11 @@ export class World {
     if (kind === 'city-base') {
       const b = props.bounds;
       const size = 2 * Math.max(Math.abs(b.minX), Math.abs(b.maxX), Math.abs(b.minZ), Math.abs(b.maxZ)) + 40;
-      this.street = createStreet({ size, roadWidth: 10, markings: roadMarkingsTexture(size, props.roads, props.seed) });
+      // The street network drives both the markings (crossings, parking) and,
+      // later, the traffic lights and lane routing.
+      this.roadGraph = new RoadGraph(props.roads, b);
+      this.junctions = this.roadGraph.junctions();
+      this.street = createStreet({ size, roadWidth: 10, markings: roadMarkingsTexture(size, props.roads, props.seed, this.junctions) });
       this.scene.add(this.street.group);
       this.surface = drivableMask(b, props.blocks, 0);
       this.lots = props.blocks.flatMap((blk) => blk.lots ?? []);

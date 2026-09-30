@@ -126,7 +126,15 @@ Out of sight, the heat cools and they give up. Everyone drives through the same 
 
 ## Street clutter
 
-Trees fill the parks and line the wider streets. There are trash cans by the doors, manhole covers in the road, puddles on the pavement, and shop signs over the street doors (HOTEL, PAWN, TV REPAIR, and one that asks KUS ON SUVALINE KLAHV?). Every roof has something on it: air-conditioning units, chimneys, vents, water tanks, dishes and antennas. Trees and cans are solid; the rest is to look at. Each kind is a single instanced or merged mesh, so the whole city of clutter costs a handful of draw calls.
+Trees fill the parks and line the wider streets. There are trash cans by the doors, manhole covers in the road, puddles on the pavement, and shop signs over the street doors (HOTEL, PAWN, TV REPAIR, and one that asks KUS ON SUVALINE KLAHV?). Trees and cans are solid; the rest is to look at. Each kind is a single instanced or merged mesh, so the whole city of clutter costs a handful of draw calls.
+
+## Junctions
+
+The street network (a graph split at every crossing, the same one the car drives) tells the markings and the signals where the junctions are. Each arm of a junction gets a **zebra crossing** and a **stop line** painted into the road texture, and the wider streets carry **parking bays** ticked along the kerb between junctions. At the busier crossings a **traffic light** stands on a corner, its red, amber or green lens glowing into the wet road. The signals are set once, out of step with each other, so the city reads as alive from the drone; making them cycle, and making the car and the law obey them, comes later.
+
+## Rooftops
+
+The roof is the one face of a building you always see from a drone, so it does the most work. Each roof has a **parapet** lip and a lighter gravel **deck**, and on it: **puddles** most of all — irregular black pools that catch the light and bloom, because it never stops raining — then glowing **skylights**, a **rooftop sign** (a bright bar painted on the deck, or a lit billboard on legs), and a **fire escape** zigzagging down the tallest wall, which reads as a ladder from above. The old hard clutter — air-conditioning units, water tanks, vents, chimneys, a dish, an antenna with a red light — is still there but sparser, so the water and the signs come through. It all merges into the block's handful of meshes.
 
 ## Current state
 
