@@ -81,6 +81,7 @@ export class NavGrid {
     const n = W * this.h;
     this.comp = new Int32Array(n).fill(-1);
     const stack = new Int32Array(n);
+    this.size = [];
     let id = 0;
     for (let s = 0; s < n; s++) {
       if (!this.free[s] || this.comp[s] >= 0) continue;
@@ -94,6 +95,7 @@ export class NavGrid {
         if (i < W - 1 && this.free[k + 1] && this.comp[k + 1] < 0) { this.comp[k + 1] = id; stack[top++] = k + 1; }
         if (k >= W && this.free[k - W] && this.comp[k - W] < 0) { this.comp[k - W] = id; stack[top++] = k - W; }
         if (k + W < n && this.free[k + W] && this.comp[k + W] < 0) { this.comp[k + W] = id; stack[top++] = k + W; }
+        this.size[id] = (this.size[id] ?? 0) + 1;
       }
       id++;
     }
@@ -121,6 +123,24 @@ export class NavGrid {
       if (best) return best;
     }
     return null;
+  }
+
+  // The cell near (x, z) in the biggest area within reach.
+  biggestNear(x, z, maxRing) {
+    const [ci, cj] = this.cellOf(x, z);
+    let best = null;
+    let bs = 0;
+    for (let j = cj - maxRing; j <= cj + maxRing; j++) {
+      for (let i = ci - maxRing; i <= ci + maxRing; i++) {
+        if (!this.inside(i, j)) continue;
+        const c = this.comp[j * this.w + i];
+        if (c >= 0 && this.size[c] > bs) {
+          bs = this.size[c];
+          best = c;
+        }
+      }
+    }
+    return best === null ? null : this.nearestIn(x, z, best, maxRing);
   }
 
   centre(i, j) {
@@ -163,13 +183,27 @@ export class NavGrid {
   // goes to the reachable spot closest to it instead; `reached` says which.
   findPath(from, to, { offRoad = 3 } = {}) {
     if (!this.comp || this.dirty) this.label();
-    const s = this.nearestFree(from[0], from[1]);
     let g = this.nearestFree(to[0], to[1]);
-    if (!s || !g) return null;
+    if (!g) return null;
     const W = this.w;
-    // A goal in another area: aim for the nearest point of our own area.
-    const home = this.comp[s[1] * W + s[0]];
-    let reachable = this.comp[g[1] * W + g[0]] === home;
+    const cellsNear = Math.ceil(4 / this.cell);
+    let s = this.nearestFree(from[0], from[1]);
+    let home = s && this.comp[s[1] * W + s[0]];
+    const goalComp = this.comp[g[1] * W + g[0]];
+    // The body can stand where the grid (which only counts whole cells) sees
+    // a small pocket, or no room at all: start from the goal's area, or the
+    // biggest one, if either is a few metres away.
+    if (!s || home !== goalComp) {
+      const alt = this.nearestIn(from[0], from[1], goalComp, cellsNear);
+      if (alt) s = alt;
+      else if (!s || this.size[home] < 200) {
+        const big = this.biggestNear(from[0], from[1], cellsNear);
+        if (big) s = big;
+      }
+      if (!s) return null;
+      home = this.comp[s[1] * W + s[0]];
+    }
+    let reachable = goalComp === home;
     if (!reachable) {
       g = this.nearestIn(to[0], to[1], home);
       if (!g) return null;
