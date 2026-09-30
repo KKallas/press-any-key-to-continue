@@ -1,0 +1,13 @@
+{
+  "name": "press-any-key-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared-world server for Press Any Key to Continue: serves the client and relays up to 100 players.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

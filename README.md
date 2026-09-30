@@ -62,7 +62,7 @@ A player can pawn a second skin and hand it to an AI agent. Typically the human 
 ## Architecture (draft)
 
 - **Client:** HTML5 in the browser, Three.js on WebGL2. The view is a surveillance camera; the client draws only what its camera can see. Engine core lives in [`client/`](client). See [`docs/VISUALS.md`](docs/VISUALS.md).
-- **Game server:** authoritative multiplayer state, agent AI, session timers.
+- **Game server:** the shared world. A small WebSocket relay ([`server/`](server)) keeps up to 100 players and hands everyone a snapshot of everyone else a dozen times a second; the city is static so only bodies cross the wire. Sign-in is an injection at the login, a chosen gesture the server recognises, never a real hole (see [`docs/MULTIPLAYER.md`](docs/MULTIPLAYER.md)). Agent AI and session timers will grow on top of it.
 - **Machine farm:** emulated pre-2000 machines in hosting containers, reachable **only through the in-game terminal**. No route to the internet or the host. Snapshot-based filesystems so resets are instant and players can't undo them. Idle machines are suspended, not left running. Players will try to break out of these boxes, so the sandbox is part of the threat model (gVisor or Firecracker class isolation, not bare containers).
 - **City generator:** offline Python turns a real OpenStreetMap area into roads, blocks and plots, and an LLM (Qwen, local or remote) marks heights where the map has none. A Blender add-on edits the result. See [`docs/CITYGEN.md`](docs/CITYGEN.md).
 - **Building generator:** the engine grows an Art Deco building on every plot from its footprint, height, seed and style. Prompts change the style through the LLM, and the building regrows.
@@ -93,6 +93,7 @@ If that loop feels uncanny, everything else is expansion. See [`docs/ONE_BLOCK.m
 - [`docs/ONE_BLOCK.md`](docs/ONE_BLOCK.md): scope for the first playable block
 - [`docs/VISUALS.md`](docs/VISUALS.md): the camera, the look, and how the engine draws it
 - [`docs/CITYGEN.md`](docs/CITYGEN.md): real maps to cities, heights by LLM, the Blender editor, the Art Deco generator
+- [`docs/MULTIPLAYER.md`](docs/MULTIPLAYER.md): the shared-world server, the injection sign-in, and what crosses the wire
 
 ## Origins
 
@@ -106,7 +107,7 @@ Grew out of an earlier concept doc, *Uber Runner* (2024), about a gig courier in
 
 ![CAM 14, hacked](docs/cam14-block01.png)
 
-Engine core, heading for an MVP: a real street map (West Oakland, from OpenStreetMap) populated with generated Art Deco buildings, parks, trees, street clutter and roof clutter, in the rain. You watch it on a monitor rack from an outside-broadcast truck: the drone feed on the big CRT, a city map on a small one that gives you the next **link** (a place, and a time on the clock to be there by), and two spare monitors with no input yet. Click to drive: one click drives like anyone else, in lane, and parks at the kerb; a double-click goes flat out across the grass and down the alleys. The deadlines are tight enough that you'll want the second, and the police notice. Drive well and nobody cares; speed where a patrol can see and you get a pursuit, then a roadblock, then an agent in a black car, who doesn't arrest. Get out and walk the alleys, and every building has a door you can reach. Inside, the feed cuts to the building's own camera. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
+Engine core, heading for an MVP, and now **multiplayer**: a real street map (West Oakland, from OpenStreetMap) populated with generated Art Deco buildings, parks, trees, street clutter and roof clutter, in the rain. You watch it on a monitor rack from an outside-broadcast truck: the drone feed on the big CRT, a city map on a small one that gives you the next **link** (a place, and a time on the clock to be there by), and two spare monitors with no input yet. Click to drive: one click drives like anyone else, in lane, and parks at the kerb; a double-click goes flat out across the grass and down the alleys. The deadlines are tight enough that you'll want the second, and the police notice. Drive well and nobody cares; speed where a patrol can see and you get a pursuit, then a roadblock, then an agent in a black car, who doesn't arrest. Get out and walk the alleys, and every building has a door you can reach. Inside, the feed cuts to the building's own camera. Run the shared world with `cd server && npm install && node server.mjs`, then open http://localhost:8000 and sign in with an injection. For solo work, `python3 serve.py` inside `client/` still serves it (add `#solo` to skip the login). Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
 
 ## License
 

@@ -290,6 +290,49 @@
     .crt { padding: 7px 7px 5px; }
   }
 
+  /* The login front page: a single CRT over black. */
+  .login {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    background: #010202;
+    padding: 16px;
+  }
+  .login-crt {
+    width: min(680px, 100%);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 22px 22px 14px;
+    background: radial-gradient(120% 100% at 50% 0%, #04140a, #010604 70%);
+    border-radius: 10px;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.9), 0 0 0 2px #0a0c0b, 0 0 40px rgba(60,255,120,0.05);
+    color: #6dff8e;
+    font-family: var(--font-osd);
+    font-size: clamp(16px, 2.3vw, 22px);
+    text-shadow: 0 0 6px rgba(60,255,120,0.45);
+  }
+  .login-crt::selection, .login-crt *::selection { background: #6dff8e; color: #011; }
+  #login-log { margin: 0; white-space: pre-wrap; word-break: break-word; overflow-y: auto; }
+  .login-line { display: flex; align-items: center; gap: 8px; }
+  .login-caret { opacity: 0.8; }
+  #login-in {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: inherit;
+    font: inherit;
+    text-shadow: inherit;
+    caret-color: #6dff8e;
+  }
+  .login-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 0.7em; opacity: 0.65; margin-top: 6px; }
+  .login-foot a { color: inherit; }
+
   .err {
     position: fixed;
     inset: 0;
@@ -307,6 +350,7 @@
   <div class="bay">
     <div class="top-plate">
       <span class="name">PRESS ANY KEY TO CONTINUE · MOBILE UNIT 7</span>
+      <span id="online" class="dim"></span>
       <span class="tallies" aria-hidden="true"><span class="tally on" id="tally-rec"></span><span class="tally green on"></span><span class="tally"></span></span>
     </div>
 

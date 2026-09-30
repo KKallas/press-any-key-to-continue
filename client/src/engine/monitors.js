@@ -149,6 +149,17 @@ export class MapScreen {
       g.arc(sx, sy, 2.5, 0, Math.PI * 2);
       g.fill();
     }
+    // Other operators in the city: soft green dots with a tick of heading.
+    for (const p of state.players ?? []) {
+      const [px, py] = P(p.x, p.z);
+      g.fillStyle = rgba(0.6);
+      if (p.kind === 'car') g.fillRect(px - 2, py - 2, 4, 4);
+      else {
+        g.beginPath();
+        g.arc(px, py, 2, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
     // Pursuers, when there are any.
     for (const p of state.pursuers ?? []) {
       const [px, py] = P(p.x, p.z);

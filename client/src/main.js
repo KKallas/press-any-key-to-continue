@@ -4,6 +4,8 @@
 
 import * as THREE from 'three';
 import { LocalServer } from './net/local-server.js';
+import { NetServer } from './net/net-server.js';
+import { login } from './game/login.js';
 import { World } from './world/world.js';
 import { BLOCK_01 } from './world/block01.js';
 import { cityToEvents } from './world/city.js';
@@ -57,8 +59,38 @@ async function loadWorld() {
 }
 const { block: BLOCK, events: LOG } = await loadWorld();
 
-// Server and world.
-const server = new LocalServer(LOG);
+// Server and world. Try the shared world (a running game server on this
+// origin); fall back to solo play if there's none, or if the address says
+// #solo. Signing in is an injection at the front page (see login.js).
+let server = null;
+let net = null;
+try {
+  const status = location.hash === '#solo' ? null : await fetch('/api/status').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (status) {
+    const user = await login('/api/status', '/api/signup');
+    net = new NetServer({
+      log: LOG,
+      block: BLOCK,
+      token: user.token,
+      me: { car: 'car1', skin: 'skin' },
+      onRoster: (roster) => {
+        const el = document.getElementById('online');
+        if (el) el.textContent = `${roster.size} ONLINE`;
+      },
+    });
+    const ok = await net.connect();
+    if (ok) {
+      server = net;
+      window.__me = user;
+    } else {
+      net = null;
+    }
+  }
+} catch (e) {
+  console.warn('No shared world; solo.', e);
+}
+if (!server) server = new LocalServer(LOG);
+
 const world = new World();
 server.subscribe((e) => e.block === BLOCK, (e) => world.apply(e));
 world.finalize();
@@ -737,6 +769,7 @@ function game(dt, time) {
       skin: mode === 'foot' ? [walker.x, walker.z] : null,
       mission,
       pursuers: pursuit?.contacts(),
+      players: net?.contacts(),
       heat: pursuit?.heat ?? 0,
       heatLabel: pursuit?.label(),
     });
@@ -768,6 +801,10 @@ function frame(now) {
   car.update(dt / 1000, input);
   walker.update(dt / 1000);
   game(dt / 1000, time);
+  if (net) {
+    net.setMode(mode);
+    net.tick(now);
+  }
   if (active === drone) droneControl.update(dt / 1000);
   loss = Math.max(0, loss - dt / 900);
   pipeline.setLoss(loss);
@@ -805,4 +842,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { mission, pursuit, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { net, mission, pursuit, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
