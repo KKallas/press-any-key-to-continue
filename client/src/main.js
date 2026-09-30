@@ -425,6 +425,62 @@ function routeForHud() {
   return null;
 }
 
+// What's under the pointer: the one building whose outline the HUD shows.
+const pointer = { x: 0, y: 0, on: false };
+canvas.addEventListener('pointermove', (e) => {
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  pointer.on = true;
+});
+canvas.addEventListener('pointerleave', () => (pointer.on = false));
+const hoverRay = new THREE.Raycaster();
+function hoveredBuilding() {
+  if (!pointer.on) return null;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((pointer.x - r.left) / r.width) * 2 - 1, -((pointer.y - r.top) / r.height) * 2 + 1);
+  hoverRay.setFromCamera(ndc, drone.camera);
+  return world.hitBuilding(hoverRay.ray.origin, hoverRay.ray.direction)?.id ?? null;
+}
+
+// The body's shape as points on it, in its own frame, taken once from its
+// meshes (light cones left out): the HUD outlines it when a wall is in the way.
+const bodyPointsCache = new Map();
+function bodyPoints(id) {
+  if (bodyPointsCache.has(id)) return bodyPointsCache.get(id);
+  const obj = world.entities.get(id)?.object;
+  if (!obj) return [];
+  obj.updateMatrixWorld(true);
+  const inv = obj.matrixWorld.clone().invert();
+  const pts = [];
+  obj.traverse((m) => {
+    if (!m.isMesh || m.material.blending === THREE.AdditiveBlending) return;
+    const pos = m.geometry.attributes.position;
+    const step = Math.max(1, Math.floor(pos.count / 80));
+    for (let i = 0; i < pos.count; i += step) {
+      pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv));
+    }
+  });
+  bodyPointsCache.set(id, pts);
+  return pts;
+}
+
+// Is the skin (or its car) behind a building, as the drone sees it? Then
+// hand the HUD its outline in world points.
+const sight = new THREE.Vector3();
+const tmp = new THREE.Vector3();
+function ghostOutline() {
+  if (mode === 'inside') return null;
+  const id = mode === 'car' ? 'car1' : 'skin';
+  const obj = world.entities.get(id)?.object;
+  if (!obj) return null;
+  const eye = drone.camera.getWorldPosition(new THREE.Vector3());
+  sight.set(obj.position.x, obj.position.y + 1, obj.position.z).sub(eye);
+  const dist = sight.length();
+  if (!world.hitBuilding(eye, sight.normalize(), dist - 0.3)) return null;
+  obj.updateMatrixWorld();
+  return bodyPoints(id).map((p) => tmp.copy(p).applyMatrix4(obj.matrixWorld).toArray());
+}
+
 function drawHud(time) {
   const near = mode === 'car' ? [] : world.doors.filter((d) => Math.hypot(d.hx - walker.x, d.hz - walker.z) < 45);
   hud.draw({
@@ -434,6 +490,8 @@ function drawHud(time) {
     cams: hudCams,
     doors: near,
     route: routeForHud(),
+    hover: hoveredBuilding(),
+    ghost: ghostOutline(),
     activeDoor: mode === 'foot' ? nearestDoor() : null,
     prompt: promptText(),
     track: trackInfo(),
@@ -594,4 +652,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

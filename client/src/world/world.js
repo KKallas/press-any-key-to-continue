@@ -7,7 +7,7 @@ import { createStreet } from '../engine/ground.js';
 import { Rain, LensRain } from '../engine/rain.js';
 import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
-import { buildDecoBlock } from './deco.js';
+import { inside, buildDecoBlock } from './deco.js';
 import { collisionMap } from '../engine/collision.js';
 
 // Road surface of a generated city as a bitmap, 2 px per metre: the blocks
@@ -64,6 +64,11 @@ export class World {
     this.obstacles = [];
     this.posts = [];
     this.doors = [];
+    // What a line of sight can hit: building meshes, and each building's
+    // footprint to tell which one was hit.
+    this.solids = [];
+    this.plots = [];
+    this.ray = new THREE.Raycaster();
 
     // Cold fill from a sky nobody has written yet.
     this.scene.add(new THREE.HemisphereLight(0x4a7480, 0x080808, 2.2));
@@ -166,6 +171,7 @@ export class World {
     if (kind === 'deco-block') {
       for (const p of props.plots) {
         this.obstacles.push(p.footprint);
+        this.plots.push({ id: p.id, footprint: p.footprint });
         for (const d of p.doors ?? []) {
           this.doors.push({ plot: p.id, ...d, hx: d.x + d.nx * 1.3, hz: d.z + d.nz * 1.3 });
         }
@@ -175,6 +181,8 @@ export class World {
       this.overlaySegments.push(...built.outline);
       built.overlayCount = built.outline.length;
       this.scene.add(built.object);
+      // Glow (neon, lit windows' frames) is light, not something you can't see through.
+      for (const m of built.object.children) if (m.name !== 'glow') this.solids.push(m);
       this.entities.set(id, { kind, ...built });
       return;
     }
@@ -187,9 +195,12 @@ export class World {
     const built = make(props);
     this.scene.add(built.object);
     if (kind === 'building') {
-      this.overlaySegments.push(...buildingOutline(props));
+      for (const seg of buildingOutline(props)) this.overlaySegments.push({ ...seg, owner: id });
       const { x, z, w, d } = props;
-      this.obstacles.push([[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x + w / 2, z + d / 2], [x - w / 2, z + d / 2]]);
+      const fp = [[x - w / 2, z - d / 2], [x + w / 2, z - d / 2], [x + w / 2, z + d / 2], [x - w / 2, z + d / 2]];
+      this.obstacles.push(fp);
+      this.plots.push({ id, footprint: fp });
+      this.solids.push(built.object);
     }
     if (kind === 'lamp' || kind === 'traffic-light') this.posts.push({ x: props.x, z: props.z, r: 0.2 });
     if (kind === 'terminal') this.posts.push({ x: props.x, z: props.z, r: 0.6 });
@@ -225,6 +236,27 @@ export class World {
     const b = this.bounds;
     this.carFree = collisionMap(b, this.obstacles, this.posts, 1.1, 2);
     this.footFree = collisionMap(b, this.obstacles, this.posts, 0.3, 4);
+  }
+
+  // The first building along a ray: { id, distance } or null. `far` stops
+  // the search, so asking "is anything between me and that?" is cheap.
+  hitBuilding(origin, dir, far = Infinity) {
+    this.ray.set(origin, dir);
+    this.ray.far = far;
+    this.ray.layers.set(0);
+    const hit = this.ray.intersectObjects(this.solids, true)[0];
+    if (!hit) return null;
+    // Just inside the wall that was hit: whose footprint is that?
+    const x = hit.point.x + dir.x * 0.3;
+    const z = hit.point.z + dir.z * 0.3;
+    let id = null;
+    for (const p of this.plots) {
+      if (inside([x, z], p.footprint)) {
+        id = p.id;
+        break;
+      }
+    }
+    return { id, distance: hit.distance };
   }
 
   despawn(id) {

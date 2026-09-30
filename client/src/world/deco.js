@@ -154,7 +154,7 @@ function centroid(pts) {
   return Math.abs(a) < 1e-6 ? pts[0] : [cx / (3 * a), cz / (3 * a)];
 }
 
-function inside(pt, pts) {
+export function inside(pt, pts) {
   let hit = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
     const [xi, zi] = pts[i];
@@ -424,11 +424,20 @@ export function buildDecoBlock(plots) {
   const M = decoMaterials();
   const B = { walls: new Builder(), roof: new Builder(), trim: new Builder(), glow: new Builder() };
   const outline = [];
-  for (const plot of plots) outline.push(...building(plot, B));
+  // Each outline segment knows its building, so the HUD can show just one.
+  for (const plot of plots) {
+    for (const seg of building(plot, B)) {
+      seg.owner = plot.id;
+      outline.push(seg);
+    }
+  }
   const group = new THREE.Group();
   for (const [k, b] of Object.entries(B)) {
     const m = b.mesh(M[k]);
-    if (m) group.add(m);
+    if (m) {
+      m.name = k;
+      group.add(m);
+    }
   }
   return { object: group, outline };
 }

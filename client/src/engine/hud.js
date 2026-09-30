@@ -52,13 +52,14 @@ export class Hud {
     g.lineCap = 'square';
     const font = (px) => `${Math.round(px * k)}px "VT323", "Courier New", monospace`;
 
-    // Wireframes of what the system knows. Kept faint: they are there to make
-    // the city readable, not to replace it.
+    // Wireframes of what the system knows. A building's outline only comes
+    // up while the pointer is on it; block outlines on the ground stay.
     const WIRE = 0.55;
     const a = { x: 0, y: 0 };
     const b = { x: 0, y: 0 };
     g.lineWidth = 2 * k;
     for (const seg of s.segments) {
+      if (seg.owner !== undefined && seg.owner !== s.hover) continue;
       if (!this.toPx(seg.a, s.camera, a) || !this.toPx(seg.b, s.camera, b)) continue;
       if ((a.x < -W * 0.3 && b.x < -W * 0.3) || (a.x > W * 1.3 && b.x > W * 1.3)) continue;
       if ((a.y < -H * 0.3 && b.y < -H * 0.3) || (a.y > H * 1.3 && b.y > H * 1.3)) continue;
@@ -159,6 +160,10 @@ export class Hud {
       }
     }
 
+    // The skin or its car behind a wall: its outline, drawn through the
+    // building the way the targeting system sees it.
+    if (s.ghost) this.ghost(s.ghost, s.camera, k);
+
     // Tracking box on the car or skin, sized to it as seen from up here.
     if (s.track && this.toPx(s.track.pos, s.camera, a)) {
       this.w.set(s.track.size ?? 3, 0, 0).applyQuaternion(s.camera.quaternion);
@@ -226,6 +231,25 @@ export class Hud {
     this.texture.needsUpdate = true;
   }
 
+  // The outline of a body from its points in the world: the convex hull of
+  // where they land on the picture.
+  ghost(points, camera, k) {
+    const g = this.ctx;
+    const p = { x: 0, y: 0 };
+    const px = [];
+    for (const q of points) if (this.toPx(q, camera, p)) px.push([p.x, p.y]);
+    if (px.length < 3) return;
+    const hull = convexHull(px);
+    g.lineWidth = 2 * k;
+    g.strokeStyle = GREEN;
+    g.globalAlpha = 0.95;
+    g.beginPath();
+    hull.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    g.stroke();
+    g.globalAlpha = 1;
+  }
+
   // A compass ribbon across the top, ticks every 10 degrees.
   headingTape(hdg, cx, y, k, font) {
     const g = this.ctx;
@@ -258,4 +282,22 @@ export class Hud {
     g.textBaseline = 'top';
     g.fillText(String(Math.round(((hdg % 360) + 360) % 360)).padStart(3, '0'), cx, y + 30 * k);
   }
+}
+
+// Andrew's monotone chain.
+function convexHull(pts) {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper = [];
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
 }
