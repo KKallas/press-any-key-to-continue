@@ -74,6 +74,55 @@ export class NavGrid {
     }
   }
 
+  // Label each connected area of free cells, so a goal in an area the body
+  // can't get to is known at once instead of after searching everywhere.
+  label() {
+    const W = this.w;
+    const n = W * this.h;
+    this.comp = new Int32Array(n).fill(-1);
+    const stack = new Int32Array(n);
+    let id = 0;
+    for (let s = 0; s < n; s++) {
+      if (!this.free[s] || this.comp[s] >= 0) continue;
+      let top = 0;
+      stack[top++] = s;
+      this.comp[s] = id;
+      while (top) {
+        const k = stack[--top];
+        const i = k % W;
+        if (i > 0 && this.free[k - 1] && this.comp[k - 1] < 0) { this.comp[k - 1] = id; stack[top++] = k - 1; }
+        if (i < W - 1 && this.free[k + 1] && this.comp[k + 1] < 0) { this.comp[k + 1] = id; stack[top++] = k + 1; }
+        if (k >= W && this.free[k - W] && this.comp[k - W] < 0) { this.comp[k - W] = id; stack[top++] = k - W; }
+        if (k + W < n && this.free[k + W] && this.comp[k + W] < 0) { this.comp[k + W] = id; stack[top++] = k + W; }
+      }
+      id++;
+    }
+    this.dirty = false;
+  }
+
+  // The cell nearest to (x, z) that lies in area `comp`.
+  nearestIn(x, z, comp, maxRing = 400) {
+    const [ci, cj] = this.cellOf(x, z);
+    for (let r = 0; r <= maxRing; r++) {
+      let best = null;
+      let bd = Infinity;
+      for (let j = cj - r; j <= cj + r; j++) {
+        for (let i = ci - r; i <= ci + r; i++) {
+          if (Math.max(Math.abs(i - ci), Math.abs(j - cj)) !== r || !this.inside(i, j)) continue;
+          if (this.comp[j * this.w + i] !== comp) continue;
+          const [px, pz] = this.centre(i, j);
+          const d = Math.hypot(px - x, pz - z);
+          if (d < bd) {
+            bd = d;
+            best = [i, j];
+          }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
   centre(i, j) {
     return [this.b.minX + (i + 0.5) * this.cell, this.b.minZ + (j + 0.5) * this.cell];
   }
@@ -113,16 +162,31 @@ export class NavGrid {
   // If the goal can't be reached (a yard boxed in by buildings), the route
   // goes to the reachable spot closest to it instead; `reached` says which.
   findPath(from, to, { offRoad = 3 } = {}) {
+    if (!this.comp || this.dirty) this.label();
     const s = this.nearestFree(from[0], from[1]);
-    const g = this.nearestFree(to[0], to[1]);
+    let g = this.nearestFree(to[0], to[1]);
     if (!s || !g) return null;
     const W = this.w;
+    // A goal in another area: aim for the nearest point of our own area.
+    const home = this.comp[s[1] * W + s[0]];
+    let reachable = this.comp[g[1] * W + g[0]] === home;
+    if (!reachable) {
+      g = this.nearestIn(to[0], to[1], home);
+      if (!g) return null;
+    }
     const start = s[1] * W + s[0];
     const goal = g[1] * W + g[0];
     const cost = new Float32Array(W * this.h).fill(Infinity);
     const came = new Int32Array(W * this.h).fill(-1);
     const open = new Heap();
-    const H = (k) => Math.hypot((k % W) - g[0], Math.floor(k / W) - g[1]);
+    const closed = new Uint8Array(W * this.h);
+    // Octile distance: the exact cost of an open 8-way grid, and never more
+    // than the real route, so the search stays both quick and right.
+    const H = (k) => {
+      const dx = Math.abs((k % W) - g[0]);
+      const dy = Math.abs(Math.floor(k / W) - g[1]);
+      return Math.max(dx, dy) + 0.414 * Math.min(dx, dy);
+    };
     cost[start] = 0;
     open.push(H(start), start);
     const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
@@ -132,6 +196,9 @@ export class NavGrid {
     let bestH = H(start);
     while (open.size && guard++ < 400000) {
       const k = open.pop();
+      // The heap keeps stale copies of cells whose cost has since improved.
+      if (closed[k]) continue;
+      closed[k] = 1;
       if (k === goal) {
         found = true;
         break;
@@ -148,7 +215,7 @@ export class NavGrid {
         const nj = j + dj;
         if (!this.inside(ni, nj)) continue;
         const nk = nj * W + ni;
-        if (!this.free[nk]) continue;
+        if (!this.free[nk] || closed[nk]) continue;
         // No squeezing diagonally between two blocked cells.
         if (di && dj && (!this.free[j * W + ni] || !this.free[nj * W + i])) continue;
         const c = cost[k] + len * (this.road[nk] ? 1 : offRoad);
@@ -167,7 +234,7 @@ export class NavGrid {
     const pts = cells.map((k) => this.centre(k % W, Math.floor(k / W)));
     pts[0] = [from[0], from[1]];
     const out = this.smooth(pts, offRoad);
-    out.reached = found;
+    out.reached = found && reachable;
     return out;
   }
 
@@ -204,6 +271,7 @@ export class NavGrid {
         if (Math.hypot(px - x, pz - z) <= radius) this.free[j * this.w + i] = 0;
       }
     }
+    this.dirty = true;
   }
 
   smooth(pts, offRoad) {

@@ -87,7 +87,7 @@ The LLM generator configures modular pieces rather than inventing meshes, which 
 
 A **double-click** means as fast as possible: the car takes the fastest line over sidewalks and lots, handbrake-drifts the sharp turns, and hits kerbs fast enough to leave the ground. The route and the waypoint are drawn on the HUD, with longer dashes when it's flat out. On foot, a click walks and a double-click runs. Click a door and the skin walks in; click the car and it gets in. Touching the keyboard takes over at any time.
 
-In testing, to 24 random waypoints, both modes arrived every time. Flat out averaged 12 m/s against 8, with about a second of airtime per drive.
+In testing, to 24 random waypoints across West Oakland, both modes arrived every time. Flat out averaged about 11 m/s against 9.5, with about a second and a half of airtime per drive. A route takes a few milliseconds to plan, a few tens across the whole map, so the click doesn't stall the picture.
 
 **On foot and through doors.** Nothing but physical barriers stops you. The car goes anywhere there's room: roads, sidewalks, empty lots, alleys wide enough. Only buildings and posts stop it, and kerbs and paving just slow it down. `E` gets the skin out, and on foot it slips down alleys the car can't. Every building has at least one door, marked as a hotzone on the HUD and lit on the facade. At a door, `E` goes inside. Interiors come later; for now the skin disappears into the building and the server logs the visit. The drone comes down closer while you're on foot.
 
