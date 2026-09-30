@@ -14,7 +14,14 @@ import { CarControl } from './engine/car.js';
 import { Hud } from './engine/hud.js';
 import { WalkerControl } from './engine/walker.js';
 import { NavGrid } from './engine/nav.js';
+import { RoadGraph } from './engine/roads.js';
 import { Autopilot } from './engine/autopilot.js';
+import { pathLength } from './engine/nav.js';
+import { MapScreen, Snow } from './engine/monitors.js';
+import { Sound } from './engine/audio.js';
+import { Mission } from './game/mission.js';
+import { Pursuit } from './game/pursuit.js';
+import { buildInterior } from './world/interior.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -92,14 +99,41 @@ const walker = new WalkerControl({
 });
 
 // Route planning: a coarse grid for the car, a finer one for a person.
-const carNav = new NavGrid({ bounds: world.bounds, free: world.carFree, surface: world.surface, cell: 1 });
+const carNav = new NavGrid({ bounds: world.bounds, free: world.carFree, surface: world.surface, green: world.green, cell: 1 });
+// The street network, for driving in lane like everyone else.
+const roads = world.roadLines ? new RoadGraph(world.roadLines, world.bounds) : null;
 const footNav = new NavGrid({ bounds: world.bounds, free: world.footFree, surface: world.surface, cell: 0.5 });
 const autopilot = new Autopilot({
   car,
-  plan: (from, to, offRoad) => carNav.findPath(from, to, { offRoad }),
+  plan: (from, to, m) => carNav.findPath(from, to, { offRoad: m.offRoad, green: m.green }),
+  road: roads ? (from, heading, to) => roads.route(from, heading, to) : null,
   blocked: (x, z) => carNav.block(x, z, 1.5),
   see: (a, b) => carNav.clear(a, b, 1),
 });
+
+// The law: patrols, roadblocks, agents. Needs the street network.
+const pursuit = roads
+  ? new Pursuit({ server, block: BLOCK, world, roads, carNav, player: { car, walker, mode: () => mode } })
+  : null;
+if (pursuit) car.free = pursuit.playerFree();
+
+// The link: somewhere to be, by a time on the clock.
+const mission = roads
+  ? new Mission({
+      doors: world.doors,
+      route: (from, to) => {
+        const r = roads.route(from, car.heading, to);
+        return r ? pathLength(r.pts) : null;
+      },
+    })
+  : null;
+
+// The side monitors.
+const mapScreen = world.blockPolys
+  ? new MapScreen($('map'), { bounds: world.bounds, blocks: world.blockPolys, roads: world.roadLines, greens: world.greens })
+  : null;
+const snow = new Snow([...document.querySelectorAll('canvas.snow')]);
+const sound = new Sound();
 
 droneControl.limit = world.limit ?? 70;
 droneControl.lock = () =>
@@ -146,6 +180,10 @@ function use() {
       walker.active = false;
       mode = 'inside';
       server.append({ block: BLOCK, type: 'enter', id: 'skin', props: { plot: door.plot, x: walker.x, z: walker.z } });
+      // The feed cuts to the building's own camera.
+      interior = buildInterior(door.plot, door.plot.length * 7 + door.plot.charCodeAt(door.plot.length - 1));
+      loss = 1;
+      setActive(interior);
     } else if (carInReach()) {
       walker.active = false;
       walker.route = null;
@@ -159,7 +197,35 @@ function use() {
     walker.active = true;
     mode = 'foot';
     insideDoor = null;
+    interior = null;
+    loss = 0.8;
+    setActive(drone);
   }
+  syncHint();
+}
+
+let interior = null;
+
+// An agent got to the skin. It's gone; the player wakes in a new one,
+// somewhere else, with a car.
+function skinLost() {
+  loss = 1;
+  say('SKIN LOST · NEW SKIN', 3);
+  autopilot.cancel();
+  walker.route = null;
+  walker.active = false;
+  if (mode === 'inside') setActive(drone);
+  interior = null;
+  insideDoor = null;
+  const a = pursuit.agent.car;
+  const [spot] = pursuit.randomRoadSpots(1, [a.x, a.z], 160, 450);
+  if (spot) car.place(spot[0], spot[1], spot[2], { visible: true });
+  car.occupied = true;
+  mode = 'car';
+  server.append({ block: BLOCK, type: 'move', transient: true, id: 'skin', props: { x: car.x, z: car.z, visible: false } });
+  pursuit.reset();
+  droneControl.target.set(car.x, car.z);
+  droneControl.locked = true;
   syncHint();
 }
 const hud = new Hud();
@@ -173,8 +239,9 @@ const autoQ = new AutoQuality((next) => applyTier(next, true));
 function size() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const tier = TIERS[tierName];
-  const w = Math.max(1, Math.round(window.innerWidth * dpr * tier.scale));
-  const h = Math.max(1, Math.round(window.innerHeight * dpr * tier.scale));
+  // The feed fills the main monitor's tube, whatever size the rack gives it.
+  const w = Math.max(1, Math.round((canvas.clientWidth || window.innerWidth) * dpr * tier.scale));
+  const h = Math.max(1, Math.round((canvas.clientHeight || window.innerHeight) * dpr * tier.scale));
   return [w, h];
 }
 
@@ -185,11 +252,11 @@ function rebuild() {
   renderer.setSize(w, h, false);
   active.camera.aspect = w / h;
   active.camera.updateProjectionMatrix();
-  world.useCamera(active);
+  if (!active.interior) world.useCamera(active);
   hud.resize(w / h);
   world.street?.setReflection(tier.reflection, w, h);
   world.rain?.setDensity(tier.rain);
-  pipeline.build(world.scene, active.camera, tier, active.lens, w, h);
+  pipeline.build(active.scene ?? world.scene, active.camera, tier, active.lens, w, h);
 }
 
 function applyTier(name, fromAuto = false) {
@@ -322,11 +389,13 @@ function setActive(entry) {
 
 function syncHint() {
   const common = 'DRAG LOOK · F TRACK · Z X ORBIT';
-  $('hint').textContent = active.kind !== 'drone'
+  $('pgm-name').textContent = active.name;
+  $('hint').textContent = active.interior ? 'E · LEAVE THE BUILDING'
+    : active.kind !== 'drone'
     ? 'ESC · BACK TO DRONE    TAB · NEXT CAMERA'
     : mode === 'car' ? `CLICK DRIVE · DOUBLE-CLICK FLAT OUT · E GET OUT · ${common}`
     : mode === 'foot' ? `CLICK WALK · DOUBLE-CLICK RUN · E USE · ${common}`
-    : `E · LEAVE THE BUILDING · ${common}`;
+    : 'E · LEAVE THE BUILDING';
 }
 
 // A plausible 1999 login, typed over the snow while the feed connects.
@@ -400,7 +469,7 @@ function say(text, secs = 1.6) {
 function promptText() {
   if (performance.now() < flash.until) return flash.text;
   if (mode === 'car') {
-    if (autopilot.route) return `AUTO ${autopilot.mode === 'stunt' ? 'FLAT OUT' : 'DRIVE'}  ${Math.round(autopilot.remaining())} M`;
+    if (autopilot.route) return `AUTO ${autopilot.mode === 'stunt' ? 'FLAT OUT' : 'DRIVE'}  ${Math.round(autopilot.remaining())} M  ${autopilot.route.label ?? ''}`.trim();
     if (car.air > 0) return 'AIRBORNE';
     return Math.abs(car.speed) > 3 ? '' : '[E] GET OUT';
   }
@@ -434,12 +503,14 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('pointerleave', () => (pointer.on = false));
 const hoverRay = new THREE.Raycaster();
-function hoveredBuilding() {
-  if (!pointer.on) return null;
+function buildingAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
-  const ndc = new THREE.Vector2(((pointer.x - r.left) / r.width) * 2 - 1, -((pointer.y - r.top) / r.height) * 2 + 1);
+  const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   hoverRay.setFromCamera(ndc, drone.camera);
   return world.hitBuilding(hoverRay.ray.origin, hoverRay.ray.direction)?.id ?? null;
+}
+function hoveredBuilding() {
+  return pointer.on ? buildingAt(pointer.x, pointer.y) : null;
 }
 
 // The body's shape as points on it, in its own frame, taken once from its
@@ -492,6 +563,10 @@ function drawHud(time) {
     route: routeForHud(),
     hover: hoveredBuilding(),
     ghost: ghostOutline(),
+    contacts: pursuit?.contacts(),
+    link: mission?.target && mission.state === 'open'
+      ? { pos: [mission.target.hx, 0.3, mission.target.hz], label: `LINK ${mission.clock}  T-${Math.ceil(mission.left(time))}` }
+      : null,
     activeDoor: mode === 'foot' ? nearestDoor() : null,
     prompt: promptText(),
     track: trackInfo(),
@@ -517,17 +592,42 @@ function groundAt(clientX, clientY) {
   return raycaster.ray.intersectPlane(ground, p) ? [p.x, p.z] : null;
 }
 
-function waypoint([x, z], fast) {
+// The door of a building to go to. On foot, the nearest one. By car, the one
+// nearest the kerb, so the car can park right by it (then the nearest).
+function doorOf(plot, from, byCar = false) {
+  let best = null;
+  let bd = Infinity;
+  for (const d of world.doors) {
+    if (d.plot !== plot) continue;
+    const kerb = byCar && roads ? roads.nearest(d.hx, d.hz).d : 0;
+    const dd = kerb * 10 + Math.hypot(d.hx - from[0], d.hz - from[1]);
+    if (dd < bd) {
+      bd = dd;
+      best = d;
+    }
+  }
+  return best;
+}
+
+// building: the building clicked on, if any. In the car that means "take me
+// to its door": the nearest one, parked as close as the car can get.
+function waypoint([x, z], fast, building = null) {
   if (mode === 'car') {
-    if (!autopilot.go([x, z], fast ? 'stunt' : 'normal')) say('NO ROUTE');
-    else if (!autopilot.route.reached) say('CAN\'T GET CLOSER BY CAR');
+    const door = building ? doorOf(building, [car.x, car.z], true) : null;
+    const goal = door ? [door.hx, door.hz] : [x, z];
+    if (!autopilot.go(goal, fast ? 'stunt' : 'normal')) say('NO ROUTE');
+    else {
+      autopilot.route.label = door ? `TO ${door.plot.toUpperCase()}` : '';
+      autopilot.route.door = door;
+      if (!door && !autopilot.route.reached) say(autopilot.route.parking ? 'PARKING AT THE KERB' : 'CAN\'T GET CLOSER BY CAR');
+    }
     return;
   }
   if (mode !== 'foot') return;
-  // A door or the car near the click: walk there and use it.
-  let door = null;
+  // A door or the car near the click, or a building: walk there and use it.
+  let door = building ? doorOf(building, [walker.x, walker.z]) : null;
   let bd = 3;
-  for (const d of world.doors) {
+  for (const d of door ? [] : world.doors) {
     const dd = Math.hypot(d.hx - x, d.hz - z);
     if (dd < bd) {
       bd = dd;
@@ -548,13 +648,14 @@ let pendingClick = null;
 droneControl.onClick = (cx, cy) => {
   const at = groundAt(cx, cy);
   if (!at) return;
+  const building = buildingAt(cx, cy);
   if (pendingClick) {
     clearTimeout(pendingClick.timer);
     pendingClick = null;
-    waypoint(at, true);
+    waypoint(at, true, building);
     return;
   }
-  pendingClick = { timer: setTimeout(() => { pendingClick = null; waypoint(at, false); }, 260) };
+  pendingClick = { timer: setTimeout(() => { pendingClick = null; waypoint(at, false, building); }, 260) };
 };
 
 // ---- Input -----------------------------------------------------------------
@@ -569,8 +670,8 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === '2') applyTier('mid');
   else if (e.key === '3') applyTier('high');
   else if (e.key === 'g' || e.key === 'G') $('grade').click();
-  else if (e.key === 'Escape') backToDrone();
-  else if ((e.key === 'e' || e.key === 'E' || e.key === 'Enter') && active === drone && !e.repeat) use();
+  else if (e.key === 'Escape' && !active.interior) backToDrone();
+  else if ((e.key === 'e' || e.key === 'E' || e.key === 'Enter') && (active === drone || active.interior) && !e.repeat) use();
   else if (e.key === 'Tab') {
     e.preventDefault();
     nextCamera();
@@ -578,10 +679,12 @@ window.addEventListener('keydown', (e) => {
 });
 
 let resizeTimer;
-window.addEventListener('resize', () => {
+const onResize = () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(rebuild, 150);
-});
+};
+window.addEventListener('resize', onResize);
+new ResizeObserver(onResize).observe(canvas);
 
 // ---- On-screen display ------------------------------------------------------
 
@@ -591,6 +694,54 @@ function osd(elapsed) {
   const s = Math.floor(elapsed) % 60;
   $('time').textContent = `23:59:${String(s).padStart(2, '0')}`;
   $('rec-dot').classList.toggle('off', Math.floor(elapsed * 1.25) % 2 === 1);
+}
+
+// ---- The game: the link, the law, the side monitors ---------------------------
+
+function playerAt() {
+  if (mode === 'car') return [car.x, car.z];
+  if (mode === 'foot') return [walker.x, walker.z];
+  return [insideDoor.hx, insideDoor.hz];
+}
+
+let missionStart = 3;
+let monitorT = 0;
+function game(dt, time) {
+  if (pursuit) {
+    pursuit.update(dt, time);
+    for (const ev of pursuit.events) {
+      if (ev === 'wanted') say('WANTED · POLICE PURSUIT', 2.5);
+      else if (ev === 'roadblock-set') say('ROADBLOCK AHEAD', 2.5);
+      else if (ev === 'agents') say('AGENTS ACTIVATED', 3);
+      else if (ev === 'clear') say('HEAT OFF', 2);
+      else if (ev === 'killed') skinLost();
+    }
+    sound.update(time, pursuit.cars.filter((c) => c.kind === 'police').map((c) => ({ id: c.id, x: c.car.x, z: c.car.z, on: c.siren && c.active })),
+      [droneControl.target.x, droneControl.target.y]);
+  }
+  if (mission) {
+    const [px, pz] = playerAt();
+    if (mission.state === 'idle' && time > missionStart) mission.next(time, [px, pz]);
+    const r = mission.state === 'idle' ? null : mission.update(time, { x: px, z: pz, insidePlot: mode === 'inside' ? insideDoor.plot : null });
+    if (r === 'made') say('LINK ESTABLISHED', 3);
+    else if (r === 'lost') say('LINK LOST', 3);
+    else if (r === 'next') mission.next(time, [px, pz]);
+    $('map-label').textContent = mission.state === 'open' ? `BY ${mission.clock}` : mission.state === 'made' ? 'MADE' : mission.state === 'lost' ? 'LOST' : 'LINK';
+  }
+  monitorT -= dt;
+  if (monitorT <= 0) {
+    monitorT = 1 / 8;
+    mapScreen?.draw({
+      now: time,
+      car: [car.x, car.z, car.heading],
+      skin: mode === 'foot' ? [walker.x, walker.z] : null,
+      mission,
+      pursuers: pursuit?.contacts(),
+      heat: pursuit?.heat ?? 0,
+      heatLabel: pursuit?.label(),
+    });
+    snow.draw(time);
+  }
 }
 
 // ---- Loop --------------------------------------------------------------------
@@ -616,6 +767,7 @@ function frame(now) {
   }
   car.update(dt / 1000, input);
   walker.update(dt / 1000);
+  game(dt / 1000, time);
   if (active === drone) droneControl.update(dt / 1000);
   loss = Math.max(0, loss - dt / 900);
   pipeline.setLoss(loss);
@@ -625,6 +777,7 @@ function frame(now) {
   if (n !== lastFrame) {
     lastFrame = n;
     const shot = n / fps;
+    if (active.interior) active.update(shot);
     if (active === drone) {
       droneControl.apply();
       drone.camera.updateMatrixWorld();
@@ -652,4 +805,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { mission, pursuit, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

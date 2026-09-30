@@ -1,10 +1,13 @@
-<title>CAM 07 Block 01</title>
-<meta name="description" content="Press Any Key to Continue: engine core. One block in the rain, seen through one surveillance camera.">
+<title>Mobile Unit 7</title>
+<meta name="description" content="Press Any Key to Continue: a monitor rack in a broadcast truck, watching a rainy city through a drone and its street cameras.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
 <style>
-  /* Layout: one full-screen camera feed; the on-screen display is part of the camera, so it sits on the image. */
+  /* Layout: a monitor rack from an outside-broadcast truck. One big CRT
+     carries the live feed (its on-screen display sits on the picture, being
+     part of the camera); three small ones down the side carry the city map
+     and two spare inputs. */
   :root {
     --feed-black: #030405;
     --osd: #e9efe9;
@@ -15,27 +18,147 @@
     --hud-dim: rgba(141, 255, 168, 0.62);
     --hud-faint: rgba(141, 255, 168, 0.35);
     --font-osd: "VT323", "Courier New", ui-monospace, monospace;
+    --rack: #15171a;
+    --rack-hi: #2a2d31;
+    --bezel: #0d0e10;
+    --plate: #b9b2a0;
+    --plate-ink: #1a1a18;
     color-scheme: dark;
   }
   [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: var(--feed-black);
+    background: #050607;
     color: var(--osd);
     font-family: var(--font-osd);
     overflow: hidden;
   }
-  #feed {
+
+  /* ---- The rack ---- */
+  .rack {
     position: fixed;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 22px 1fr 22px;
+    background: #050607;
+  }
+  .rail {
+    background:
+      radial-gradient(circle at 50% 50%, #030303 0 3px, transparent 3.5px) 0 0 / 22px 28px,
+      linear-gradient(90deg, #1b1d20, #2c2f33 45%, #16181a);
+    border-inline: 1px solid #000;
+  }
+  .bay {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(180px, 22vw, 330px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "plate plate" "main side" "panel panel";
+    gap: 10px;
+    padding: 10px;
+    background: linear-gradient(180deg, var(--rack-hi), var(--rack) 30%, #101214);
+  }
+  .top-plate {
+    grid-area: plate;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 17px;
+    letter-spacing: 0.18em;
+    color: #8c8f93;
+  }
+  .top-plate .name { color: #c9c3b2; }
+  .tallies { display: flex; gap: 10px; align-items: center; }
+  .tally { width: 10px; height: 10px; border-radius: 50%; background: #2a0d0d; box-shadow: inset 0 0 2px #000; }
+  .tally.on { background: #ff2a2a; box-shadow: 0 0 8px #ff2a2a, inset 0 0 2px #600; }
+  .tally.green.on { background: #4dff7a; box-shadow: 0 0 8px #4dff7a; }
+
+  .crt {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 12px 12px 8px;
+    background: linear-gradient(160deg, #1e2023, var(--bezel) 60%);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 #34373b, inset 0 -2px 6px #000, 0 2px 8px #000;
+  }
+  .crt.main { grid-area: main; }
+  .side { grid-area: side; display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 10px; min-height: 0; }
+  .screen {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--feed-black);
+    border-radius: 18px / 22px;
+    box-shadow: 0 0 0 2px #050505, 0 0 0 5px #1a1b1d;
+  }
+  .crt.small .screen { border-radius: 14px / 16px; }
+  /* The tube: a bulge of glass with a reflection, and the dark round the edge. */
+  .screen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+      radial-gradient(120% 90% at 30% 18%, rgba(255, 255, 255, 0.07), transparent 42%),
+      radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, 0.55) 100%);
+    box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.9);
+    z-index: 3;
+  }
+  .crt.small .screen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0 1px, transparent 1px 3px);
+    z-index: 2;
+  }
+  .label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    letter-spacing: 0.14em;
+  }
+  .label > span { white-space: nowrap; overflow: hidden; }
+  .label .tag { background: var(--plate); color: var(--plate-ink); padding: 0 7px; border-radius: 2px; }
+  .label .knobs { display: flex; gap: 7px; }
+  .knob { width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #5a5d61, #111 70%); box-shadow: 0 1px 1px #000; }
+
+  .panel {
+    grid-area: panel;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    background: linear-gradient(180deg, #1b1d20, #0f1012);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 #2e3135;
+  }
+
+  #feed {
+    position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     display: block;
     background: var(--feed-black);
   }
+  .small canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .osd {
-    position: fixed;
+    position: absolute;
     inset: 0;
+    z-index: 1;
     pointer-events: none;
     padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
     display: grid;
@@ -69,8 +192,7 @@
     gap: 6px;
     flex-wrap: wrap;
     align-items: center;
-    background: var(--panel);
-    padding: 6px 8px;
+    font-size: 20px;
   }
   .controls button {
     font: inherit;
@@ -137,7 +259,8 @@
 
   /* The hack: a terminal session typed over the snow while the feed connects. */
   #hack {
-    position: fixed;
+    position: absolute;
+    z-index: 4;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
@@ -148,6 +271,22 @@
     font-size: clamp(18px, 2vw, 24px);
     white-space: pre-wrap;
     pointer-events: none;
+  }
+
+  /* Phones: the side monitors go in a row under the main one. */
+  @media (max-width: 760px), (max-aspect-ratio: 4/5) {
+    .rack { grid-template-columns: 8px 1fr 8px; }
+    .bay {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto auto;
+      grid-template-areas: "plate" "main" "side" "panel";
+      padding: 8px;
+      gap: 8px;
+    }
+    .side { grid-template-rows: none; grid-template-columns: repeat(3, minmax(0, 1fr)); height: 26vw; min-height: 110px; }
+    .top-plate { font-size: 13px; }
+    .label { font-size: 12px; }
+    .crt { padding: 7px 7px 5px; }
   }
 
   .err {
@@ -162,33 +301,66 @@
   }
 </style>
 
-<canvas id="feed" aria-label="Drone and surveillance camera views of a rainy street at night"></canvas>
+<div class="rack">
+  <div class="rail" aria-hidden="true"></div>
+  <div class="bay">
+    <div class="top-plate">
+      <span class="name">PRESS ANY KEY TO CONTINUE · MOBILE UNIT 7</span>
+      <span class="tallies" aria-hidden="true"><span class="tally on" id="tally-rec"></span><span class="tally green on"></span><span class="tally"></span></span>
+    </div>
 
-<div class="osd" aria-live="off">
-  <div class="osd-top cam-only">
-    <div>
-      <div class="rec"><span class="rec-dot" id="rec-dot"></span><span>REC</span></div>
-      <div id="cam-name">UAV-2</div>
-      <div class="dim" id="cam-desc">EO NIGHT · WIDE</div>
+    <div class="crt main">
+      <div class="screen" id="main-screen">
+        <canvas id="feed" aria-label="Drone and surveillance camera views of a rainy street at night"></canvas>
+        <div class="osd" aria-live="off">
+          <div class="osd-top cam-only">
+            <div>
+              <div class="rec"><span class="rec-dot" id="rec-dot"></span><span>REC</span></div>
+              <div id="cam-name">UAV-2</div>
+              <div class="dim" id="cam-desc">EO NIGHT · WIDE</div>
+            </div>
+            <div class="clock">
+              <div id="date">31.12.1999</div>
+              <div id="time">23:59:00</div>
+            </div>
+          </div>
+          <div></div>
+          <div class="hint dim" id="hint"></div>
+          <div></div>
+        </div>
+        <div id="hack" hidden></div>
+      </div>
+      <div class="label"><span class="tag">PGM</span><span id="pgm-name">UAV-2</span><span class="knobs" aria-hidden="true"><span class="knob"></span><span class="knob"></span><span class="knob"></span></span></div>
     </div>
-    <div class="clock">
-      <div id="date">31.12.1999</div>
-      <div id="time">23:59:00</div>
+
+    <div class="side">
+      <div class="crt small">
+        <div class="screen"><canvas id="map" aria-label="City map with the next link: where and when"></canvas></div>
+        <div class="label"><span class="tag">MAP</span><span id="map-label">LINK</span></div>
+      </div>
+      <div class="crt small">
+        <div class="screen"><canvas class="snow" aria-label="Spare monitor, no input"></canvas></div>
+        <div class="label"><span class="tag">AUX 1</span><span class="dim">NO INPUT</span></div>
+      </div>
+      <div class="crt small">
+        <div class="screen"><canvas class="snow" aria-label="Spare monitor, no input"></canvas></div>
+        <div class="label"><span class="tag">AUX 2</span><span class="dim">NO INPUT</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="controls" role="toolbar" aria-label="Render quality">
+        <button type="button" id="q-low" data-tier="low" aria-pressed="false">LOW</button>
+        <button type="button" id="q-mid" data-tier="mid" aria-pressed="false">MID</button>
+        <button type="button" id="q-high" data-tier="high" aria-pressed="false">HIGH</button>
+        <button type="button" id="q-auto" data-tier="auto" aria-pressed="true">AUTO</button>
+        <button type="button" id="grade" aria-pressed="true">GRADE</button>
+        <button type="button" id="tune" aria-expanded="false" aria-controls="tune-panel">TUNE</button>
+      </div>
+      <div class="stats dim" id="stats">-- FPS</div>
     </div>
   </div>
-  <div></div>
-  <div class="hint dim" id="hint"></div>
-  <div class="osd-bottom">
-    <div class="controls" role="toolbar" aria-label="Render quality">
-      <button type="button" id="q-low" data-tier="low" aria-pressed="false">LOW</button>
-      <button type="button" id="q-mid" data-tier="mid" aria-pressed="false">MID</button>
-      <button type="button" id="q-high" data-tier="high" aria-pressed="false">HIGH</button>
-      <button type="button" id="q-auto" data-tier="auto" aria-pressed="true">AUTO</button>
-      <button type="button" id="grade" aria-pressed="true">GRADE</button>
-      <button type="button" id="tune" aria-expanded="false" aria-controls="tune-panel">TUNE</button>
-    </div>
-    <div class="stats dim" id="stats">-- FPS</div>
-  </div>
+  <div class="rail" aria-hidden="true"></div>
 </div>
 
 <div id="tune-panel" class="tune" hidden role="group" aria-label="Grade settings">

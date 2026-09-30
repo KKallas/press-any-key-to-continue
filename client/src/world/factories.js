@@ -354,9 +354,16 @@ export const factories = {
     return { object: group };
   },
 
-  car({ x, z, heading, color, lights }) {
+  // livery: none, 'police' (black-and-white with a light bar and siren) or
+  // 'agent' (black, polished, cold lamps). lights: real lamps (costly; only
+  // the player's car has them).
+  car({ x, z, heading, color, lights, livery }) {
     const group = new THREE.Group();
-    const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.35 });
+    const paint = new THREE.MeshStandardMaterial({
+      color: livery === 'police' ? 0xd9d9d4 : livery === 'agent' ? 0x050506 : color,
+      roughness: livery === 'agent' ? 0.12 : 0.28,
+      metalness: livery === 'agent' ? 0.8 : 0.35,
+    });
     const body = new THREE.Mesh(box(4.4, 0.75, 1.85), paint);
     body.position.y = 0.72;
     group.add(body);
@@ -372,6 +379,55 @@ export const factories = {
       wheel.rotation.x = Math.PI / 2;
       wheel.position.set(wx, 0.36, wz);
       group.add(wheel);
+    }
+    let update;
+    if (livery === 'police') {
+      // Black doors and bonnet, a light bar on the roof.
+      const black = std(0x060606, { roughness: 0.3, metalness: 0.4 });
+      for (const s of [-1, 1]) {
+        const door = new THREE.Mesh(box(2.2, 0.5, 0.02), black);
+        door.position.set(-0.1, 0.7, s * 0.93);
+        group.add(door);
+      }
+      const hood = new THREE.Mesh(box(1.1, 0.02, 1.7), black);
+      hood.position.set(1.65, 1.1, 0);
+      group.add(hood);
+      const bar = new THREE.Mesh(box(0.3, 0.14, 1.3), std(0x111111));
+      bar.position.set(-0.3, 1.84, 0);
+      group.add(bar);
+      const red = glow('#ff1020', 0);
+      const blue = glow('#1848ff', 0);
+      for (const [mat, side] of [[red, -1], [blue, 1]]) {
+        const lamp = new THREE.Mesh(box(0.32, 0.16, 0.55), mat);
+        lamp.position.set(-0.3, 1.86, side * 0.36);
+        group.add(lamp);
+      }
+      // One light that swaps colour: the street goes red, blue, red.
+      const flash = new THREE.PointLight('#ff1020', 0, 22, 2);
+      flash.position.set(-0.3, 2.4, 0);
+      group.add(flash);
+      update = (time) => {
+        const on = !!group.userData.siren && group.visible;
+        const phase = Math.floor(time * 6) % 4;
+        const redOn = on && (phase === 0 || phase === 2);
+        red.emissiveIntensity = redOn ? 14 : on ? 0.6 : 0;
+        blue.emissiveIntensity = on && !redOn ? 14 : on ? 0.6 : 0;
+        flash.intensity = on ? 60 : 0;
+        flash.color.set(redOn ? '#ff1020' : '#1848ff');
+      };
+    }
+    if (!lights && livery) {
+      // Lamps that glow but light nothing: cheap, and enough from above.
+      const head = glow(livery === 'agent' ? '#cfe6ff' : '#fff1d6', 7);
+      const tail = glow('#ff1010', 5);
+      for (const s of [-1, 1]) {
+        const h = new THREE.Mesh(box(0.06, 0.18, 0.4), head);
+        h.position.set(2.22, 0.78, s * 0.62);
+        group.add(h);
+        const t = new THREE.Mesh(box(0.06, 0.16, 0.5), tail);
+        t.position.set(-2.22, 0.8, s * 0.58);
+        group.add(t);
+      }
     }
     if (lights) {
       const head = glow('#fff1d6', 9);
@@ -398,7 +454,7 @@ export const factories = {
     }
     group.position.set(x, 0, z);
     group.rotation.y = heading;
-    return { object: group };
+    return { object: group, update };
   },
 
   person({ x, z, umbrella, coat, heading }) {

@@ -16,7 +16,8 @@ export const NO_INPUT = { up: false, down: false, left: false, right: false, han
 export class CarControl {
   // free(x, z): no barrier here (buildings, posts). surface(x, z): on
   // tarmac; anywhere else is kerbs and paving, and slower going.
-  constructor({ server, block, id, start, free, surface }) {
+  // listen: take the keyboard (only the player's car does).
+  constructor({ server, block, id, start, free, surface, listen = true }) {
     this.server = server;
     this.block = block;
     this.id = id;
@@ -30,10 +31,27 @@ export class CarControl {
     this.air = 0; // metres off the ground
     this.vy = 0;
     this.airtime = 0; // seconds of the last jump, for the HUD
+    this.extra = {}; // more props to send with every move (a siren, say)
     this.keys = new Set();
-    window.addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    window.addEventListener('blur', () => this.keys.clear());
+    if (listen) {
+      window.addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
+      window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+      window.addEventListener('blur', () => this.keys.clear());
+    }
+  }
+
+  // Put the car somewhere, stopped, and tell the world.
+  place(x, z, heading, extra = {}) {
+    this.x = x;
+    this.z = z;
+    this.heading = heading;
+    this.speed = 0;
+    this.air = 0;
+    this.vy = 0;
+    this.server.append({
+      block: this.block, type: 'move', transient: true, id: this.id,
+      props: { x, z, heading, speed: 0, air: 0, pitch: 0, ...this.extra, ...extra },
+    });
   }
 
   onRoad(x, z) {
@@ -122,7 +140,7 @@ export class CarControl {
         type: 'move',
         transient: true,
         id: this.id,
-        props: { x: this.x, z: this.z, heading: this.heading, speed: this.speed, air: this.air, pitch: this.air > 0 ? this.vy * 0.04 : 0 },
+        props: { x: this.x, z: this.z, heading: this.heading, speed: this.speed, air: this.air, pitch: this.air > 0 ? this.vy * 0.04 : 0, ...this.extra },
       });
     }
   }

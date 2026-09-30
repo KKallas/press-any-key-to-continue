@@ -53,7 +53,7 @@ class Heap {
 
 export class NavGrid {
   // free(x, z): may the body be here. surface(x, z): on tarmac.
-  constructor({ bounds, free, surface, cell }) {
+  constructor({ bounds, free, surface, green, cell }) {
     this.b = bounds;
     this.cell = cell;
     this.w = Math.ceil((bounds.maxX - bounds.minX) / cell);
@@ -69,7 +69,8 @@ export class NavGrid {
         // a cell that's only half clear is a route into a wall.
         const h = cell * 0.3;
         this.free[k] = free(x, z) && free(x - h, z - h) && free(x + h, z - h) && free(x - h, z + h) && free(x + h, z + h) ? 1 : 0;
-        this.road[k] = surface(x, z) ? 1 : 0;
+        // 1 tarmac, 2 grass, 0 anything else (paving, lots, alleys).
+        this.road[k] = surface(x, z) ? 1 : green?.(x, z) ? 2 : 0;
       }
     }
   }
@@ -208,7 +209,7 @@ export class NavGrid {
   // offRoad: cost of a cell that isn't tarmac, relative to 1 for tarmac.
   // If the goal can't be reached (a yard boxed in by buildings), the route
   // goes to the reachable spot closest to it instead; `reached` says which.
-  findPath(from, to, { offRoad = 3 } = {}) {
+  findPath(from, to, { offRoad = 3, green = offRoad } = {}) {
     if (!this.comp || this.dirty) this.label();
     let g = this.nearestFree(to[0], to[1]);
     if (!g) return null;
@@ -278,7 +279,8 @@ export class NavGrid {
         if (!this.free[nk] || closed[nk]) continue;
         // No squeezing diagonally between two blocked cells.
         if (di && dj && (!this.free[j * W + ni] || !this.free[nj * W + i])) continue;
-        const c = cost[k] + len * (this.road[nk] ? 1 : offRoad);
+        const r = this.road[nk];
+        const c = cost[k] + len * (r === 1 ? 1 : r === 2 ? green : offRoad);
         if (c < cost[nk]) {
           cost[nk] = c;
           came[nk] = k;
@@ -321,7 +323,7 @@ export class NavGrid {
         if (!this.inside(i, j) || !this.free[j * this.w + i]) return false;
       }
       const [i, j] = this.cellOf(x, z);
-      if (!this.road[j * this.w + i]) rough++;
+      if (this.road[j * this.w + i] !== 1) rough++;
     }
     return offRoad < 2 || rough <= 1;
   }

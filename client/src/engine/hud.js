@@ -160,6 +160,35 @@ export class Hud {
       }
     }
 
+    // The link: where to be, and by when. A diamond on the ground; off the
+    // picture, an arrow on the edge pointing at it.
+    if (s.link) this.linkMarker(s.link, s.camera, k, font, s.time);
+
+    // Other cars the system tracks: patrols and worse.
+    for (const c of s.contacts ?? []) {
+      if (!this.toPx([c.x, 1, c.z], s.camera, a)) continue;
+      if (a.x < 0 || a.y < 0 || a.x > W || a.y > H) continue;
+      const r = 14 * k;
+      const flash = c.kind === 'agent' || Math.floor(s.time * 4) % 2 === 0;
+      g.globalAlpha = flash ? 1 : 0.55;
+      g.lineWidth = 2 * k;
+      g.beginPath();
+      if (c.kind === 'agent') {
+        // A full box with a cross: the one to run from.
+        g.strokeRect(a.x - r, a.y - r, r * 2, r * 2);
+        g.moveTo(a.x - r, a.y - r); g.lineTo(a.x + r, a.y + r);
+        g.moveTo(a.x + r, a.y - r); g.lineTo(a.x - r, a.y + r);
+      } else {
+        g.moveTo(a.x, a.y - r); g.lineTo(a.x + r, a.y); g.lineTo(a.x, a.y + r); g.lineTo(a.x - r, a.y); g.closePath();
+      }
+      g.stroke();
+      g.font = font(18);
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(c.label, a.x + r + 6 * k, a.y);
+      g.globalAlpha = 1;
+    }
+
     // The skin or its car behind a wall: its outline, drawn through the
     // building the way the targeting system sees it.
     if (s.ghost) this.ghost(s.ghost, s.camera, k);
@@ -229,6 +258,52 @@ export class Hud {
     [`${blink ? 'REC ●' : 'REC  '}`, '31.12.1999', s.clock].forEach((line, i) => g.fillText(line, W - 24 * k, (70 + i * 30) * k));
 
     this.texture.needsUpdate = true;
+  }
+
+  linkMarker(link, camera, k, font, time) {
+    const g = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const p = { x: 0, y: 0 };
+    const on = this.toPx(link.pos, camera, p);
+    const inside = on && p.x > 40 * k && p.y > 60 * k && p.x < W - 40 * k && p.y < H - 40 * k;
+    const blink = Math.floor(time * 3) % 2 === 0;
+    g.lineWidth = 2.5 * k;
+    g.font = font(20);
+    g.textBaseline = 'middle';
+    if (inside) {
+      const r = (16 + (blink ? 4 : 0)) * k;
+      g.beginPath();
+      g.moveTo(p.x, p.y - r); g.lineTo(p.x + r, p.y); g.lineTo(p.x, p.y + r); g.lineTo(p.x - r, p.y); g.closePath();
+      g.moveTo(p.x, p.y - r * 0.35); g.lineTo(p.x, p.y + r * 0.35);
+      g.moveTo(p.x - r * 0.35, p.y); g.lineTo(p.x + r * 0.35, p.y);
+      g.stroke();
+      g.textAlign = 'left';
+      g.fillText(link.label, p.x + r + 8 * k, p.y);
+      return;
+    }
+    // Off screen: an arrow at the edge, pointing the way.
+    const cx = W / 2;
+    const cy = H / 2;
+    let dx = (on ? p.x : cx * 2 - p.x) - cx;
+    let dy = (on ? p.y : cy * 2 - p.y) - cy;
+    const L = Math.hypot(dx, dy) || 1;
+    dx /= L;
+    dy /= L;
+    const t = Math.min((W / 2 - 50 * k) / Math.max(Math.abs(dx), 1e-3), (H / 2 - 60 * k) / Math.max(Math.abs(dy), 1e-3));
+    const ex = cx + dx * t;
+    const ey = cy + dy * t;
+    const s = 14 * k;
+    g.globalAlpha = blink ? 1 : 0.6;
+    g.beginPath();
+    g.moveTo(ex + dx * s, ey + dy * s);
+    g.lineTo(ex - dy * s * 0.7 - dx * s * 0.4, ey + dx * s * 0.7 - dy * s * 0.4);
+    g.lineTo(ex + dy * s * 0.7 - dx * s * 0.4, ey - dx * s * 0.7 - dy * s * 0.4);
+    g.closePath();
+    g.stroke();
+    g.textAlign = dx > 0.3 ? 'right' : dx < -0.3 ? 'left' : 'center';
+    g.fillText(link.label, ex - dx * 30 * k, ey - dy * 30 * k);
+    g.globalAlpha = 1;
   }
 
   // The outline of a body from its points in the world: the convex hull of

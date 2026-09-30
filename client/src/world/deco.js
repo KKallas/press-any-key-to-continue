@@ -328,6 +328,7 @@ function building(plot, B) {
   const convexish = inside(cen, fp) && Math.abs(signedArea(hull(fp))) < area * 1.15;
   let top = podiumTop;
   let topRect = fp;
+  let firstTier = null;
   if (tiers > 1 && ob) {
     const weights = [0.55, 0.3, 0.15].slice(0, tiers - 1);
     const wsum = weights.reduce((s, w) => s + w, 0);
@@ -354,9 +355,11 @@ function building(plot, B) {
       y += h;
       top = y;
       topRect = shape;
+      if (!firstTier) firstTier = shape;
     }
   }
 
+  const tierTop = top;
   // Crown.
   const ctr = topRect.reduce((s, p) => [s[0] + p[0] / topRect.length, s[1] + p[1] / topRect.length], [0, 0]);
   const shrink = (pts, s) => pts.map((p) => [ctr[0] + (p[0] - ctr[0]) * s, ctr[1] + (p[1] - ctr[1]) * s]);
@@ -404,6 +407,8 @@ function building(plot, B) {
     B.trim.box(d.x + d.nx * 0.45, GROUND + 2.55, d.z + d.nz * 0.45, 1.9, 0.12, 0.9, ang, trim);
   }
 
+  rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, st.crown, roofCol);
+
   // Aviation light on the tall ones.
   if (H > 45) {
     B.glow.box(ctr[0], top + 0.4, ctr[1], 0.35, 0.35, 0.35, 0, new THREE.Color(1, 0.05, 0.05));
@@ -417,6 +422,62 @@ function building(plot, B) {
     }
   }
   return outline;
+}
+
+// The clutter every real roof has: air-conditioning units, chimneys, vents,
+// antennas and the odd satellite dish. On a stepped tower it sits on the
+// podium roof, round the foot of the first setback; on a plain block, round
+// the edge of the roof.
+function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, roofCol) {
+  const metal = new THREE.Color(0.2, 0.21, 0.22);
+  const dark = new THREE.Color(0.08, 0.08, 0.085);
+  const brick = new THREE.Color(0.22, 0.1, 0.07);
+  const area = Math.abs(signedArea(fp));
+  const place = (pts, y, avoid, count, kinds) => {
+    const c = centroid(pts);
+    for (let k = 0, tries = 0; k < count && tries < count * 8; tries++) {
+      const v = pts[Math.floor(r() * pts.length)];
+      const w = pts[Math.floor(r() * pts.length)];
+      const u = 0.55 + r() * 0.33;
+      const m = 0.5 + r() * 0.5;
+      const p = [c[0] + ((v[0] + (w[0] - v[0]) * m * 0.3) - c[0]) * u, c[1] + ((v[1] + (w[1] - v[1]) * m * 0.3) - c[1]) * u];
+      if (!inside(p, pts) || (avoid && inside(p, avoid))) continue;
+      k++;
+      const ang = r() * Math.PI;
+      const kind = kinds[Math.floor(r() * kinds.length)];
+      if (kind === 'ac') {
+        B.trim.box(p[0], y + 0.45, p[1], 1.3, 0.9, 0.9, ang, metal);
+        B.roof.box(p[0], y + 0.92, p[1], 0.7, 0.05, 0.7, ang, dark); // the fan grille
+      } else if (kind === 'chimney') {
+        const h = 1.4 + r() * 1.6;
+        B.roof.box(p[0], y + h / 2, p[1], 0.7, h, 0.7, ang, brick);
+        B.roof.box(p[0], y + h + 0.05, p[1], 0.8, 0.1, 0.8, ang, dark);
+      } else if (kind === 'vent') {
+        B.trim.box(p[0], y + 0.5, p[1], 0.35, 1, 0.35, 0, metal);
+        B.trim.box(p[0], y + 1.05, p[1], 0.55, 0.1, 0.55, 0, metal);
+      } else if (kind === 'antenna') {
+        const h = 4 + r() * 6;
+        B.trim.box(p[0], y + h / 2, p[1], 0.07, h, 0.07, 0, metal);
+        for (let b = 0; b < 3; b++) B.trim.box(p[0], y + h * (0.55 + b * 0.15), p[1], 1.6 - b * 0.4, 0.04, 0.04, ang, metal);
+        if (r() < 0.35) B.glow.box(p[0], y + h + 0.1, p[1], 0.14, 0.14, 0.14, 0, new THREE.Color(1, 0.04, 0.03));
+      } else if (kind === 'dish') {
+        B.trim.box(p[0], y + 0.5, p[1], 0.1, 1, 0.1, 0, metal);
+        B.trim.box(p[0], y + 1.1, p[1], 1.1, 0.8, 0.08, ang, new THREE.Color(0.32, 0.32, 0.3));
+      } else if (kind === 'tank') {
+        for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) B.trim.box(p[0] + dx, y + 1, p[1] + dz, 0.12, 2, 0.12, 0, dark);
+        B.roof.box(p[0], y + 3, p[1], 2.2, 2, 2.2, ang, new THREE.Color(0.18, 0.13, 0.09));
+        B.roof.box(p[0], y + 4.1, p[1], 2.4, 0.2, 2.4, ang, dark);
+      }
+    }
+  };
+  const n = Math.min(10, 2 + Math.floor(area / 90));
+  if (firstTier) {
+    place(fp, podiumTop, firstTier, n, ['ac', 'ac', 'vent', 'chimney', 'tank', 'dish']);
+    if (crown !== 'spire') place(topRect, tierTop, crown === 'ziggurat' ? topRect.map((q) => [cen[0] + (q[0] - cen[0]) * 0.8, cen[1] + (q[1] - cen[1]) * 0.8]) : null, 2, ['antenna', 'ac', 'vent']);
+  } else {
+    const avoid = crown === 'ziggurat' ? fp.map((q) => [cen[0] + (q[0] - cen[0]) * 0.8, cen[1] + (q[1] - cen[1]) * 0.8]) : null;
+    place(fp, podiumTop, avoid, n, ['ac', 'ac', 'vent', 'chimney', 'antenna', 'dish', 'tank']);
+  }
 }
 
 // All the buildings of one block, merged: four meshes for the whole block.

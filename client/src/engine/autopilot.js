@@ -2,28 +2,32 @@
 // controls. Each step it looks a little way down the route, steers towards
 // that point, and picks a speed it can still stop or turn from.
 //
-//   normal  keeps to the road, slows for corners, stops at the waypoint
-//   stunt   takes the fastest line over sidewalks and lots, handbrake
-//           drifts through the sharp turns, and doesn't mind a kerb jump
+//   normal  follows the streets in the right-hand lane, turns at the
+//           junctions, slows for corners, and parks at the kerb
+//   stunt   takes the shortest line, across grass and down alleys,
+//           handbrake drifts through the sharp turns, jumps kerbs
 
 import { pathLength } from './nav.js';
 
 // top: speed on a straight. corner90: speed for a right-angle turn.
 // brake: the deceleration the driver plans with (the car can do 20 m/s²).
+// offRoad, green: route cost of paving and of grass, against 1 for tarmac.
 const MODES = {
-  normal: { top: 13, offRoadTop: 7, corner90: 4.5, brake: 6, stopDecel: 6, offRoad: 3 },
-  stunt: { top: 22, offRoadTop: 22, corner90: 8, brake: 13, stopDecel: 12, offRoad: 1.15 },
+  normal: { top: 13, offRoadTop: 7, corner90: 4.5, brake: 6, stopDecel: 5, offRoad: 3, green: 6 },
+  stunt: { top: 22, offRoadTop: 22, corner90: 8, brake: 13, stopDecel: 12, offRoad: 1, green: 0.92 },
 };
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 export class Autopilot {
-  // plan(from, to, offRoad) -> [[x, z], ...] or null
+  // plan(from, to, mode) -> [[x, z], ...] or null: across the grid.
+  // road(from, heading, to) -> { pts, park } or null: along the streets.
   // blocked(x, z): tell the planner there is something in the way here.
   // see(a, b): can the car drive straight from a to b.
-  constructor({ car, plan, blocked, see }) {
+  constructor({ car, plan, road, blocked, see }) {
     this.car = car;
     this.plan = plan;
+    this.road = road;
     this.blocked = blocked;
     this.see = see ?? (() => true);
     this.route = null;
@@ -35,7 +39,17 @@ export class Autopilot {
 
   go(to, mode = 'normal') {
     const m = MODES[mode];
-    const pts = this.plan([this.car.x, this.car.z], to, m.offRoad);
+    const from = [this.car.x, this.car.z];
+    // A normal drive keeps to the streets and parks at the kerb nearest the goal.
+    if (mode === 'normal' && this.road) {
+      const r = this.road(from, this.car.heading, to);
+      if (r && r.pts.length >= 2) {
+        const reached = Math.hypot(r.park[0] - to[0], r.park[1] - to[1]) < 6;
+        this.route = { pts: r.pts, goal: r.park, wanted: to, reached, parking: true, mode, m, i: 1, stuckFor: 0, recover: 0, since: 0 };
+        return true;
+      }
+    }
+    const pts = this.plan(from, to, m);
     if (!pts || pts.length < 2) {
       this.route = null;
       return false;
@@ -131,12 +145,14 @@ export class Autopilot {
     if (r.recover > 0) {
       r.recover -= dt;
       if (r.recover <= 0) this.go(r.wanted, r.mode);
-      return { up: false, down: true, left: r.recoverSteer < 0, right: r.recoverSteer > 0, hand: false };
+      // Back away from whatever stopped us: forwards if we were reversing into it.
+      const fwd = r.recoverDir > 0;
+      return { up: fwd, down: !fwd, left: (r.recoverSteer < 0) !== fwd, right: (r.recoverSteer > 0) !== fwd, hand: false };
     }
 
     // Aim down the route, but only at a point the car can drive straight to;
     // otherwise at the next corner.
-    let [tx, tz] = this.lookahead(5 + Math.abs(v) * 0.5);
+    let [tx, tz] = this.lookahead(r.parking ? 3.5 + Math.abs(v) * 0.35 : 5 + Math.abs(v) * 0.5);
     if (!this.see([car.x, car.z], [tx, tz])) [tx, tz] = r.pts[r.i];
     const want = Math.atan2(-(tz - car.z), tx - car.x);
     const err = wrap(want - car.heading);
@@ -168,15 +184,19 @@ export class Autopilot {
       if (m === MODES.stunt && behind && v > 6) c.hand = true;
     }
 
-    // Stuck: pushing but not moving.
-    if ((c.up || c.down) && Math.abs(v) < 0.4 && r.since > 1) r.stuckFor += dt;
-    else r.stuckFor = 0;
+    // Stuck: pushing but getting nowhere (against a wall, the kerb of the
+    // world, a post), judged by distance covered, not by the speedometer.
+    if (!r.anchor || Math.hypot(car.x - r.anchor[0], car.z - r.anchor[1]) > 0.8) {
+      r.anchor = [car.x, car.z];
+      r.stuckFor = 0;
+    } else if ((c.up || c.down) && r.since > 1) r.stuckFor += dt;
     if (r.stuckFor > 1.2) {
       r.stuckFor = 0;
       r.recover = 0.9;
       r.recoverSteer = err > 0 ? 1 : -1;
       // Whatever we're pushing against, the planner should know about it.
       const dir = c.down ? -1 : 1;
+      r.recoverDir = -dir;
       this.blocked?.(car.x + Math.cos(car.heading) * 2.4 * dir, car.z - Math.sin(car.heading) * 2.4 * dir);
     }
 

@@ -16,6 +16,8 @@ Steps (each is a subcommand, so you can stop, edit in Blender, and go on):
     access   make sure every building can be walked to from the street,
              carving alleys where needed, and place its doors (build runs
              this for you; run it again after editing in Blender)
+    parks    clear a few street-facing plots to grass: the green the game
+             uses as shortcuts (run after heights, then access again)
 
 Examples:
 
@@ -24,6 +26,7 @@ Examples:
     python3 citygen.py heights city.json --llm http://localhost:11434/v1 --model qwen2.5
     python3 citygen.py heights city.json --heuristic
     python3 citygen.py access city.json
+    python3 citygen.py parks city.json --count 12
 
 Coordinates in city.json are metres: X east, Z south, origin at the centre
 of the area. Polygons are lists of [x, z] points, exterior ring only.
@@ -451,6 +454,46 @@ def cmd_access(args):
     print(f"Access: {doors} doors, {carved} alleys carved. Wrote {args.out or args.city}")
 
 
+# ---------------------------------------------------------------- parks ---
+
+def cmd_parks(args):
+    """Turn a few street-facing plots (and small neighbours) into grass."""
+    city = load(args.city)
+    rng = random.Random(args.seed)
+    roads = road_space_of(city)
+    plots = city["plots"]
+    polys = {p["id"]: Polygon(p["footprint"]) for p in plots}
+    candidates = [p for p in plots if p.get("height") and p.get("source") == "generated"
+                  and 120 <= polys[p["id"]].area <= 900 and polys[p["id"]].distance(roads) < 6]
+    rng.shuffle(candidates)
+    chosen = []
+    for p in candidates:
+        if len(chosen) >= args.count:
+            break
+        c = polys[p["id"]].centroid
+        if any(c.distance(polys[q["id"]].centroid) < args.spacing for q in chosen):
+            continue
+        chosen.append(p)
+    cleared = 0
+    for p in chosen:
+        park = [p]
+        area = polys[p["id"]].area
+        # Take in a small neighbour or two, for a park rather than a gap.
+        for q in plots:
+            if q is p or q["block"] != p["block"] or not q.get("height") or q.get("source") != "generated":
+                continue
+            if polys[q["id"]].distance(polys[p["id"]]) < 1.6 and area + polys[q["id"]].area < 1300 and rng.random() < 0.6:
+                park.append(q)
+                area += polys[q["id"]].area
+        for q in park:
+            q["height"] = 0
+            q["use"] = "park"
+            q["doors"] = []
+            cleared += 1
+    save(city, args.out or args.city)
+    print(f"Parks: {len(chosen)} parks from {cleared} plots. Wrote {args.out or args.city}. Run access again.")
+
+
 # -------------------------------------------------------------- heights ---
 
 def block_facts(city):
@@ -625,6 +668,14 @@ def main():
     a.add_argument("--out")
     a.add_argument("--seed", type=int, default=1999)
     a.set_defaults(fn=cmd_access)
+
+    k = sub.add_parser("parks", help="clear a few street-facing plots to grass")
+    k.add_argument("city")
+    k.add_argument("--out")
+    k.add_argument("--count", type=int, default=12)
+    k.add_argument("--spacing", type=float, default=45, help="metres between parks")
+    k.add_argument("--seed", type=int, default=1999)
+    k.set_defaults(fn=cmd_parks)
 
     args = ap.parse_args()
     args.fn(args)

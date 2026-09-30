@@ -9,6 +9,8 @@ import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 import { inside, buildDecoBlock } from './deco.js';
 import { collisionMap } from '../engine/collision.js';
+import { greenMap, grassMesh } from '../engine/greens.js';
+import { buildProps } from './props.js';
 
 // Road surface of a generated city as a bitmap, 2 px per metre: the blocks
 // are painted solid, everything else is tarmac. Not a barrier: the car can
@@ -153,6 +155,9 @@ export class World {
       this.street = createStreet({ size, roadWidth: 10, markings: roadMarkingsTexture(size, props.roads, props.seed) });
       this.scene.add(this.street.group);
       this.surface = drivableMask(b, props.blocks, 0);
+      this.lots = props.blocks.flatMap((blk) => blk.lots ?? []);
+      this.roadLines = props.roads;
+      this.blockPolys = props.blocks.map((blk) => blk.polygon);
       this.bounds = b;
       this.limit = Math.max(b.maxX, b.maxZ, -b.minX, -b.minZ) - 10;
       props.blocks.forEach((blk, i) => {
@@ -228,12 +233,35 @@ export class World {
     if (this.surface) e.object.position.y = (this.surface(props.x, props.z) ? 0 : 0.15) + (props.air ?? 0);
     if (props.pitch !== undefined) e.object.rotation.z = props.pitch;
     if (props.visible !== undefined) e.object.visible = props.visible;
+    if (props.siren !== undefined) e.object.userData.siren = props.siren;
     e.state = { ...e.state, ...props };
   }
 
   // Once every spawn has arrived: what stops a car, and what stops a person.
   finalize() {
     const b = this.bounds;
+    // Grass in what's left of the lots.
+    this.greens = greenMap(b, this.lots ?? [], this.obstacles);
+    this.green = this.greens.test;
+    if (this.greens.patches.length) this.scene.add(grassMesh(b, this.greens));
+    // Street furniture. Trees and trash cans stop things, so they go in
+    // before the collision maps are made.
+    if (this.roadLines) {
+      const props = buildProps({
+        bounds: b,
+        blocks: this.blockPolys,
+        roads: this.roadLines,
+        doors: this.doors,
+        lamps: this.posts,
+        green: this.green,
+        greens: this.greens,
+        surface: this.surface,
+        footprints: this.obstacles,
+      });
+      this.scene.add(props.group);
+      this.posts.push(...props.posts);
+      this.propCounts = props.counts;
+    }
     this.carFree = collisionMap(b, this.obstacles, this.posts, 1.1, 2);
     this.footFree = collisionMap(b, this.obstacles, this.posts, 0.3, 4);
   }

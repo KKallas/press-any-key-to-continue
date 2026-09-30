@@ -23,7 +23,10 @@ function placeLamps(city, maxLamps, realLights, start) {
         const off = road.width / 2 + 1.1;
         const x = x0 + ux * d + -uz * off * side;
         const z = z0 + uz * d + ux * off * side;
-        if (!lamps.some((l) => Math.hypot(l.x - x, l.z - z) < 14)) {
+        // Only on a sidewalk: near a junction the kerb of one road can be
+        // the middle of another.
+        const onKerb = city.blocks.some((b) => insidePoly([x, z], b.polygon));
+        if (onKerb && !lamps.some((l) => Math.hypot(l.x - x, l.z - z) < 14)) {
           lamps.push({ x, z, arm: [uz * side, -ux * side] });
         }
         side = -side;
@@ -38,6 +41,16 @@ function placeLamps(city, maxLamps, realLights, start) {
     t: 0, block: B, type: 'spawn', kind: 'lamp', id: `lamp${i + 1}`,
     props: { x: l.x, z: l.z, arm: l.arm, height: 7, color: '#ff9a3c', intensity: i < realLights ? 260 : 0 },
   }));
+}
+
+function insidePoly([x, z], pts) {
+  let c = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i];
+    const [xj, zj] = pts[j];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+  }
+  return c;
 }
 
 // Where the car starts: the middle of the biggest road.

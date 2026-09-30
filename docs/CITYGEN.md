@@ -68,6 +68,15 @@ Every building has to be reachable on foot from the street through at least one 
 
 Doors are stored with each plot as hotzones (`x`, `z`, outward normal `nx`, `nz`, and `kind`: street, alley or yard). The engine lights them on the facade and shows them on the HUD. The sample city has 350 doors on 229 buildings, and the engine confirms every building can be walked to from the start.
 
+## Parks
+
+```bash
+python3 citygen.py parks city.json --count 12
+python3 citygen.py access city.json
+```
+
+Clears a few street-facing plots (and sometimes a small neighbour) to grass: `height` 0, `use: "park"`, no doors. The engine turns every open patch of lot big enough to be a yard into grass, and plants trees in it. Grass is the game's shortcut: a careful drive keeps off it, a fast one cuts across, and the police notice. Run `access` afterwards, since the buildings around a new park may get new doors.
+
 ## 5. Edit in Blender
 
 Install [`tools/blender/pak_city.py`](../tools/blender/pak_city.py) through *Edit > Preferences > Add-ons > Install from Disk*. The panel is in the 3D view's sidebar (`N`), tab **PAK City**.
@@ -102,6 +111,7 @@ Add `#block01` to the address for the old hand-built test block.
 2. **Setback tiers** that step inwards as they rise. On an ordinary plot a tier keeps the plot's own shape, shrunk about its centre. On an awkward one it falls back to the largest rectangle that fits.
 3. **Vertical piers** up every face, running a little past each parapet.
 4. A **crown**: stepped ziggurat, spire, corner fins, or flat. Sometimes a neon band round the top tier, and an aviation light on the tallest.
+5. **Roof clutter**: air-conditioning units, chimneys, vents, water tanks, dishes and antennas (a few with a red light). On a stepped tower it stands on the podium roof round the foot of the first setback; on a plain block, round the edge of the roof.
 
 Windows follow real metres (2.4 m bays, 3.3 m floors), so floors line up across tiers.
 
@@ -142,4 +152,4 @@ Coordinates are metres, X east, Z south, origin at the centre of the area. Polyg
 
 ## Sample
 
-[`client/cities/west-oakland.json`](../client/cities/west-oakland.json) comes from the small West Oakland extract in the osmnx project's test data: 20 roads, 15 blocks, 245 plots (20 of them real footprints), 350 doors. Heights are from the heuristic. Run it through an LLM for a skyline with some intent.
+[`client/cities/west-oakland.json`](../client/cities/west-oakland.json) comes from the small West Oakland extract in the osmnx project's test data: 20 roads, 15 blocks, 245 plots (20 of them real footprints, 27 cleared to 12 parks), 351 doors. Heights are from the heuristic. Run it through an LLM for a skyline with some intent.

@@ -85,28 +85,59 @@ The LLM generator configures modular pieces rather than inventing meshes, which 
 
 **Tracking.** The drone locks on to the car you drive, with a tracking box and ground speed, and leads it slightly. Drag to look away (the mode reads FREE), `F` to lock back on (TRACK).
 
-**Click to drive.** You don't steer; you point. A click on the drone feed sets a waypoint, and the car drives itself there through its own controls (throttle, brake, steering, handbrake), so it can only do what a driver could. It plans a route over the city that keeps to the road, looks a little way down it, and picks a speed it can still brake from for every corner ahead. It backs off and tries another way if it gets stuck, and remembers what it bumped into. If the waypoint is boxed in by buildings, it drives to the nearest point it can reach.
+**Click to drive.** You don't steer; you point. A click on the drone feed sets a waypoint, and the car drives itself there through its own controls (throttle, brake, steering, handbrake), so it can only do what a driver could.
 
-A **double-click** means as fast as possible: the car takes the fastest line over sidewalks and lots, handbrake-drifts the sharp turns, and hits kerbs fast enough to leave the ground. The route and the waypoint are drawn on the HUD, with longer dashes when it's flat out. On foot, a click walks and a double-click runs. Click a door and the skin walks in; click the car and it gets in. Touching the keyboard takes over at any time.
+A **single click** drives like everyone else. The car follows the street network, turns at the junctions, keeps to the right-hand lane, slows for corners, and parks at the kerb nearest the waypoint, on the waypoint's side of the street (going round the block for it if it has to). A waypoint off the road means the nearest kerb, and the skin walks the rest.
 
-In testing, to 24 random waypoints across West Oakland, both modes arrived every time. Flat out averaged about 11 m/s against 9.5, with about a second and a half of airtime per drive. A route takes a few milliseconds to plan, a few tens across the whole map, so the click doesn't stall the picture.
+A **double-click** means as fast as possible: the shortest line, across the grass and the pavement and down the alleys, handbrake drifts through the sharp turns, and kerbs hit fast enough to leave the ground. The route and the waypoint are drawn on the HUD, with longer dashes when it's flat out.
 
-**On foot and through doors.** Nothing but physical barriers stops you. The car goes anywhere there's room: roads, sidewalks, empty lots, alleys wide enough. Only buildings and posts stop it, and kerbs and paving just slow it down. `E` gets the skin out, and on foot it slips down alleys the car can't. Every building has at least one door, marked as a hotzone on the HUD and lit on the facade. At a door, `E` goes inside. Interiors come later; for now the skin disappears into the building and the server logs the visit. The drone comes down closer while you're on foot.
+**Click a building** and the car goes to its door: the one nearest the kerb, parked as close as the car can get (about four metres from the door, usually). The building's wireframe comes up under the pointer, so you can see what you're about to click. On foot, a click walks and a double-click runs; click a building or a door and the skin walks in, click the car and it gets in. Touching the keyboard takes over at any time. If the car gets stuck it backs away from whatever stopped it and tries again.
 
-**Driving.** Four blocks in a 2x2 grid, ringed by roads that run on past the city into empty lots. The car stays on the roads and scrapes along kerbs. Steering is relative to the car, so it stays right as the drone circles. Movement goes through the server as transient events: the client simulates, sends, and draws the car only when the event comes back, so the same path works over a network later.
+In testing, to 24 random waypoints across West Oakland, both modes arrived every time. A careful drive spent about 83% of its time in the right-hand lane (against 44% for a flat-out one) and averaged about 10 m/s; flat out averaged about 12 m/s with nearly two seconds of airtime per drive.
+
+**On foot and through doors.** Nothing but physical barriers stops you. The car goes anywhere there's room: roads, sidewalks, empty lots, alleys wide enough. Only buildings and posts stop it, and kerbs and paving just slow it down. `E` gets the skin out, and on foot it slips down alleys the car can't. Every building has at least one door, marked as a hotzone on the HUD and lit on the facade. At a door, `E` goes inside, and the feed cuts to the building's own security camera, a dome up in the corner of the lobby: a desk, a terminal left logged in, a strip light that can't decide. It's the same room in every building for now, a placeholder for interiors generated per building later. `E` again comes back out. The drone comes down closer while you're on foot.
+
+**Driving.** The car scrapes along walls and bounces off posts, trees and other cars. Steering is relative to the car, so it stays right as the drone circles. Movement goes through the server as transient events: the client simulates, sends, and draws the car only when the event comes back, so the same path works over a network later.
 
 **Street cameras.** The CCTV cameras are objects in the world, housings with a red tally light on lamp posts, walls and a mast, tagged on the drone feed. Hacking into them comes later, through an in-game web browser of the period. For development, `Tab` jumps into the next camera's feed and `Esc` returns to the drone.
 
+## The rack
+
+The page is a monitor rack from an outside-broadcast truck: rack rails with their screw holes, a maker's plate, tally lights, bezels with knobs and label tapes. The big CRT (**PGM**) carries whichever feed you're on. Down the side, three small ones:
+
+- **MAP**: the city as a dispatch terminal of the period would draw it, in green vectors. Streets, blocks, stippled parks, your car, the police, and the next **link** blinking with its deadline. The bottom line shows the heat.
+- **AUX 1** and **AUX 2**: nothing plugged in yet, so they show dim snow and NO INPUT.
+
+On a phone the three small monitors sit in a row under the big one.
+
+## The link and the law
+
+**The link.** The map monitor names a building and a time on the clock: `LINK P0206 BY 23:59:30`. Get the skin there (by car to its door, or into the building) before the clock reads it. Nobody says what the link is for. The clock only ever reads 23:59, so the window is seconds, and it's set tight: a careful drive won't quite make it. You'll have to cut across the grass or speed. On the drone feed the link is a diamond on the ground with a countdown, or an arrow on the edge of the picture pointing the way.
+
+**The police** drive the streets like anyone else, in lane. Drive like everyone else and they don't care. Speed (over about 52 km/h), leave the road, or take off, where a patrol car has a line of sight to you, and the heat goes up:
+
+| Heat | What happens |
+|---|---|
+| WANTED | The patrols that saw you give chase, light bars and sirens on (the siren is synthesised, and louder the nearer the drone is looking) |
+| ROADBLOCK | A patrol car is parked across the road ahead of you |
+| AGENTS | A black car comes for you. If it reaches the skin, the skin is lost, and you wake up in a new one somewhere else, with a car |
+
+Out of sight, the heat cools and they give up. Everyone drives through the same car controls and autopilot as you, and sees only what a line of sight allows. The HUD tracks them: a flashing diamond for a patrol, a crossed box for an agent.
+
+## Street clutter
+
+Trees fill the parks and line the wider streets. There are trash cans by the doors, manhole covers in the road, puddles on the pavement, and shop signs over the street doors (HOTEL, PAWN, TV REPAIR, and one that asks KUS ON SUVALINE KLAHV?). Every roof has something on it: air-conditioning units, chimneys, vents, water tanks, dishes and antennas. Trees and cans are solid; the rest is to look at. Each kind is a single instanced or merged mesh, so the whole city of clutter costs a handful of draw calls.
+
 ## Current state
 
-The engine core in [`client/`](../client) draws four blocks in the rain, with placeholder buildings, streets, a drivable red car, a few figures under umbrellas, streetlamps, neon, four street cameras and the drone. Run `python3 serve.py` inside `client/` and open http://localhost:8000. It's a small static server with caching turned off, so edits show up on reload.
+The engine core in [`client/`](../client) draws the generated West Oakland in the rain on the monitor rack, with the drone, the red car, the skin, patrols, an agent, the link, and the interior camera. `#block01` on the address loads the hand-built test block instead. Run `python3 serve.py` inside `client/` and open http://localhost:8000. It's a small static server with caching turned off, so edits show up on reload.
 
 | Input | Does |
 |---|---|
-| Click | Set a waypoint. In the car: drive there. On foot: walk there; click a door to walk in, or the car to get in |
-| Double-click | The same, as fast as possible: flat out in the car, running on foot |
+| Click | Set a waypoint. In the car: drive there in lane and park. On foot: walk there. Click a building to go to its door (by car, park by it; on foot, walk in), or the car to get in |
+| Double-click | The same, as fast as possible: flat out across the grass in the car, running on foot |
 | Drag | Look around (breaks the lock) |
-| `E` or `Enter` | Get out of the car; at a door, go in; inside, come out; next to the car, get in |
+| `E` or `Enter` | Get out of the car; at a door, go in (the feed cuts to the camera inside); inside, come out; next to the car, get in |
 | `W` `A` `S` `D`, arrows, `Space`, `Shift` | Manual override: drive or walk yourself (the waypoint is dropped); handbrake; run |
 | `F` | Lock the drone back on the car or the skin |
 | `Z` `X` | Steer the orbit |
