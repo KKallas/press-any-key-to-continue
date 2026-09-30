@@ -91,6 +91,10 @@ export const BLOCK_01 = [
       position: [25, 30, 27],
       target: [-4, 1, -7],
       fov: 46,
-      lens: { barrel: 0.08, dirt: 1.0, noise: 0.35, aberration: 0.0022, drops: 1.0, crack: true, seed: 5 },
+      lens: {
+        barrel: 0.08, dirt: 1.0, noise: 0.35, aberration: 0.0022, drops: 1.0, crack: true, seed: 5,
+        // The recording: 400 lines, 12.5 fps, heavily compressed.
+        lines: 400, fps: 12.5, compression: 0.8, glitch: 1.0,
+      },
     } },
 ];

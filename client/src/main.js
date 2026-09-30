@@ -125,12 +125,23 @@ let last = performance.now();
 let fpsAcc = 0;
 let fpsFrames = 0;
 
+// The camera records at its own frame rate (12.5 fps for cheap CCTV).
+// The world only moves when the camera takes a frame, and the GPU rests
+// in between, which also makes the choppy look nearly free.
+const fps = cam.lens.fps ?? 12.5;
+let lastFrame = -1;
+
 function frame(now) {
   const dt = now - last;
   last = now;
   const time = (now - t0) / 1000;
-  world.update(time, renderer.domElement.height);
-  pipeline.render(time);
+  const n = Math.floor(time * fps);
+  if (n !== lastFrame) {
+    lastFrame = n;
+    const shot = n / fps;
+    world.update(shot, renderer.domElement.height);
+    pipeline.render(shot, n);
+  }
   osd(time);
 
   autoQ.frame(dt, tierName);

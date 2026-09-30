@@ -21,6 +21,10 @@ That makes every flaw in the image part of the fiction, not a filter:
 
 **Bleach bypass, with a nod to Sin City.** The image is graded as if the silver was never washed out of the print: desaturated, high contrast, crushed blacks, hard highlights. The rule that makes it Sin City is **light keeps its colour**. Neon, lit windows, headlights, and the lamp glow in the rain stay in colour. Everything they fall on goes almost monochrome. One saturated red survives outside the lights too, reserved for things the game wants you to notice (the car you're about to steal, for a start).
 
+**A bad recording.** What reaches the player is not the camera's image but its cheap recording, and it looks like one: about 400 lines with pixels wider than they are tall, interlaced fields whose lines don't quite agree, colour stored at a quarter of the resolution so neon and tail lights bleed in blocks, 8x8 compression blocks with banding in the dark, now and then a macroblock that arrives from the wrong part of the frame, and a band of lines that loses sync and slides. The camera records at 12.5 frames per second, so the world moves in steps. The GPU also rests between frames, which makes the choppy look almost free.
+
+Every camera sets its own recording in its lens profile (`lines`, `fps`, `compression`, `glitch`), so a bank camera can be clean and smooth while a back-street one is a smear.
+
 **Warm against cool.** The base is a cold green-cyan night in the tint of the Matrix, with sodium streetlights turning sickly. Against it, a slightly sweeter 90s: tungsten light spilling from windows, magenta and amber neon.
 
 **Rain and night everywhere.** Wet streets double every light source for free, and darkness hides low detail. Most of the budget goes into light, which is cheap in a browser if you fake it well. It is always night because nobody has ever written daylight (see [`LORE.md`](LORE.md)).
