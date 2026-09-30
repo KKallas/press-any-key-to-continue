@@ -158,6 +158,61 @@ export function markingsTexture(size, roadWidth, roads, seed) {
   return toTexture(c, { srgb: false });
 }
 
+// Road markings for real, irregular streets: a dashed centre line on
+// two-way roads and a faint edge line either side. Covers a square of
+// `size` metres centred on the origin, like the street surface.
+export function roadMarkingsTexture(size, roads, seed) {
+  const px = 2048;
+  const [c, g] = canvas(px, px);
+  const r = rng(seed);
+  const m = px / size;
+  const P = ([x, z]) => [px / 2 + x * m, px / 2 + z * m];
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, px, px);
+  g.strokeStyle = '#fff';
+  g.lineCap = 'butt';
+  for (const road of roads) {
+    const pts = road.points.map(P);
+    if (road.width >= 9) {
+      g.lineWidth = Math.max(1.2, 0.16 * m);
+      g.setLineDash([3 * m, 3 * m]);
+      g.beginPath();
+      pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.stroke();
+    }
+    // Edge lines: offset the polyline either side.
+    g.setLineDash([]);
+    g.lineWidth = Math.max(1, 0.12 * m);
+    for (const side of [-1, 1]) {
+      g.beginPath();
+      road.points.forEach(([x, z], i) => {
+        const a = road.points[Math.max(0, i - 1)];
+        const b = road.points[Math.min(road.points.length - 1, i + 1)];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const off = (road.width / 2 - 0.5) * side;
+        const [qx, qy] = P([x - ((b[1] - a[1]) / L) * off, z + ((b[0] - a[0]) / L) * off]);
+        if (i) g.lineTo(qx, qy);
+        else g.moveTo(qx, qy);
+      });
+      g.globalAlpha = 0.5;
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+  }
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 3200; i++) {
+    g.globalAlpha = 0.25 + r() * 0.6;
+    g.beginPath();
+    g.arc(r() * px, r() * px, 2 + r() * 12, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+  const tex = toTexture(c, { srgb: false });
+  tex.flipY = false;
+  return tex;
+}
+
 // Dirt on the camera glass. Only visible where bright light hits it, so this
 // is a multiplier for the bloom, not an overlay.
 export function lensDirtTexture(seed, crack) {

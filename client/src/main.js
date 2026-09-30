@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { LocalServer } from './net/local-server.js';
 import { World } from './world/world.js';
 import { BLOCK_01 } from './world/block01.js';
+import { cityToEvents } from './world/city.js';
 import { Pipeline } from './engine/pipeline.js';
 import { TIERS, AutoQuality } from './engine/quality.js';
 import { DroneControl } from './engine/drone.js';
@@ -30,10 +31,26 @@ try {
 renderer.toneMapping = THREE.NoToneMapping;
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the camera pass converts to sRGB itself
 
+// Which world: a generated city (cities/<name>.json, made by tools/citygen),
+// or the hand-built test block. Add #block01 to the address for the latter.
+const CITY = 'west-oakland';
+async function loadWorld() {
+  if (location.hash === '#block01') return { block: 'B01', events: BLOCK_01 };
+  try {
+    const res = await fetch(`cities/${CITY}.json`);
+    if (!res.ok) throw new Error(res.status);
+    return cityToEvents(await res.json());
+  } catch (e) {
+    console.warn('No generated city, using the test block.', e);
+    return { block: 'B01', events: BLOCK_01 };
+  }
+}
+const { block: BLOCK, events: LOG } = await loadWorld();
+
 // Server and world.
-const server = new LocalServer(BLOCK_01);
+const server = new LocalServer(LOG);
 const world = new World();
-server.subscribe((e) => e.block === 'B01', (e) => world.apply(e));
+server.subscribe((e) => e.block === BLOCK, (e) => world.apply(e));
 
 const DRONE_ID = 'UAV-2';
 const drone = world.cameras.get(DRONE_ID);
@@ -42,14 +59,15 @@ const streetCams = [...world.cameras.values()].filter((c) => c.kind === 'camera'
 let active = drone;
 
 // The car you drive. The drone locks on to it.
-const carSpawn = BLOCK_01.find((e) => e.id === 'car1').props;
+const carSpawn = LOG.find((e) => e.id === 'car1').props;
 const car = new CarControl({
   server,
-  block: 'B01',
+  block: BLOCK,
   id: 'car1',
   start: { x: carSpawn.x, z: carSpawn.z, heading: carSpawn.heading },
-  roads: world.roads,
+  drivable: world.drivable,
 });
+droneControl.limit = world.limit ?? 70;
 droneControl.lock = () => ({
   x: car.x,
   z: car.z,
@@ -186,6 +204,7 @@ function backToDrone() {
 }
 
 function nextCamera() {
+  if (!streetCams.length) return;
   const i = streetCams.indexOf(active);
   hack(streetCams[(i + 1) % streetCams.length]);
 }

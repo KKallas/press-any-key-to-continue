@@ -64,7 +64,8 @@ A player can pawn a second skin and hand it to an AI agent. Typically the human 
 - **Client:** HTML5 in the browser, Three.js on WebGL2. The view is a surveillance camera; the client draws only what its camera can see. Engine core lives in [`client/`](client). See [`docs/VISUALS.md`](docs/VISUALS.md).
 - **Game server:** authoritative multiplayer state, agent AI, session timers.
 - **Machine farm:** emulated pre-2000 machines in hosting containers, reachable **only through the in-game terminal**. No route to the internet or the host. Snapshot-based filesystems so resets are instant and players can't undo them. Idle machines are suspended, not left running. Players will try to break out of these boxes, so the sandbox is part of the threat model (gVisor or Firecracker class isolation, not bare containers).
-- **Generator:** Qwen, which can run locally or remotely, configures generator scripts from the layered prompts.
+- **City generator:** offline Python turns a real OpenStreetMap area into roads, blocks and plots, and an LLM (Qwen, local or remote) marks heights where the map has none. A Blender add-on edits the result. See [`docs/CITYGEN.md`](docs/CITYGEN.md).
+- **Building generator:** the engine grows an Art Deco building on every plot from its footprint, height, seed and style. Prompts change the style through the LLM, and the building regrows.
 - **MCP connector:** runs outside the game and drives a skin through the same client protocol as a human player, with no extra state or views.
 - **Moderation:** text players write into the shared world is read by other players, so the commons needs light moderation.
 
@@ -91,6 +92,7 @@ If that loop feels uncanny, everything else is expansion. See [`docs/ONE_BLOCK.m
 - [`docs/LORE.md`](docs/LORE.md): the world, the rumours, the tone
 - [`docs/ONE_BLOCK.md`](docs/ONE_BLOCK.md): scope for the first playable block
 - [`docs/VISUALS.md`](docs/VISUALS.md): the camera, the look, and how the engine draws it
+- [`docs/CITYGEN.md`](docs/CITYGEN.md): real maps to cities, heights by LLM, the Blender editor, the Art Deco generator
 
 ## Origins
 
@@ -98,11 +100,13 @@ Grew out of an earlier concept doc, *Uber Runner* (2024), about a gig courier in
 
 ## Status
 
-![The drone circling Block 01](docs/drone-block01.png)
+![The drone over a generated city](docs/drone-block01.png)
+
+![The generated city, oblique](docs/city-oblique.png)
 
 ![CAM 14, hacked](docs/cam14-block01.png)
 
-Engine core: four blocks in the rain with placeholder models. You drive the red car and watch from a drone that circles and tracks it, with a green tactical overlay over the degraded video. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
+Engine core: a real street map (West Oakland, from OpenStreetMap) populated with generated Art Deco buildings, in the rain. You drive the red car and watch from a drone that circles and tracks it, with a green tactical overlay over the degraded video. Run `python3 serve.py` inside `client/` and open http://localhost:8000. Controls are in [`docs/VISUALS.md`](docs/VISUALS.md#current-state). Being built with Claude Code and Codex.
 
 ## License
 

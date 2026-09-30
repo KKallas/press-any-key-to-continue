@@ -19,6 +19,7 @@ export class DroneControl {
     this.keys = new Set();
     this.drag = null;
     this.lock = null; // () => {x, z, vx, vz, speed} of whatever we follow
+    this.limit = LIMIT;
     this.locked = true;
     this.climb = 0; // extra altitude, like GTA2's camera rising with speed
 
@@ -73,7 +74,7 @@ export class DroneControl {
     const fwd = [-s, -c];
     this.target.x += -dx * k * right[0] + dy * k * fwd[0] * 1.6;
     this.target.y += -dx * k * right[1] + dy * k * fwd[1] * 1.6;
-    this.target.clampScalar(-LIMIT, LIMIT);
+    this.target.clampScalar(-this.limit, this.limit);
   }
 
   zoom(factor) {

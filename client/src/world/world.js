@@ -5,8 +5,45 @@ import * as THREE from 'three';
 import { factories } from './factories.js';
 import { createStreet } from '../engine/ground.js';
 import { Rain } from '../engine/rain.js';
-import { markingsTexture } from '../engine/textures.js';
+import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
+import { buildDecoBlock } from './deco.js';
+
+// Drivable area of a generated city as a bitmap, 2 px per metre: the blocks
+// (with a margin for the car's body) are painted solid, everything else is road.
+function drivableMask(bounds, blocks, margin) {
+  const ppm = 2;
+  const w = Math.ceil((bounds.maxX - bounds.minX) * ppm);
+  const h = Math.ceil((bounds.maxZ - bounds.minZ) * ppm);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.strokeStyle = '#fff';
+  g.lineWidth = margin * 2 * ppm;
+  g.lineJoin = 'round';
+  for (const b of blocks) {
+    g.beginPath();
+    b.polygon.forEach(([x, z], i) => {
+      const px = (x - bounds.minX) * ppm;
+      const pz = (z - bounds.minZ) * ppm;
+      if (i) g.lineTo(px, pz);
+      else g.moveTo(px, pz);
+    });
+    g.closePath();
+    g.fill();
+    g.stroke();
+  }
+  const data = g.getImageData(0, 0, w, h).data;
+  const edge = 2;
+  return (x, z) => {
+    if (x < bounds.minX + edge || x > bounds.maxX - edge || z < bounds.minZ + edge || z > bounds.maxZ - edge) return false;
+    const px = Math.floor((x - bounds.minX) * ppm);
+    const pz = Math.floor((z - bounds.minZ) * ppm);
+    return data[(pz * w + px) * 4] < 128;
+  };
+}
 
 export class World {
   constructor() {
@@ -23,7 +60,12 @@ export class World {
     this.blocks = [];
 
     // Cold fill from a sky nobody has written yet.
-    this.scene.add(new THREE.HemisphereLight(0x4a7480, 0x080808, 1.5));
+    this.scene.add(new THREE.HemisphereLight(0x4a7480, 0x080808, 2.2));
+    // A cold moon somewhere behind the rain: one lit face, one dark face,
+    // so buildings read as shapes and not as holes in the night.
+    const moon = new THREE.DirectionalLight(0x8fb4c8, 1.1);
+    moon.position.set(-0.6, 1, 0.35);
+    this.scene.add(moon);
   }
 
   apply(event) {
@@ -71,6 +113,12 @@ export class World {
     if (kind === 'street') {
       const markings = markingsTexture(props.size, props.roadWidth, props.roads, props.seed);
       this.roads = { list: props.roads, half: props.roadWidth / 2, edge: props.size / 2, bounds: props.bounds };
+      const { list, half, edge } = this.roads;
+      const m = half - 1.1;
+      this.drivable = (x, z) =>
+        Math.abs(x) < edge - 2 && Math.abs(z) < edge - 2 &&
+        (list.some((q) => Math.abs(x - q) < m) || list.some((q) => Math.abs(z - q) < m));
+      this.limit = edge - 10;
       this.overlaySegments.push(...blockOutlines(props.roads, props.roadWidth / 2));
       const r = props.roads;
       let n = 1;
@@ -81,6 +129,36 @@ export class World {
       }
       this.street = createStreet({ size: props.size, roadWidth: props.roadWidth, markings });
       this.scene.add(this.street.group);
+    }
+
+    if (kind === 'city-base') {
+      const b = props.bounds;
+      const size = 2 * Math.max(Math.abs(b.minX), Math.abs(b.maxX), Math.abs(b.minZ), Math.abs(b.maxZ)) + 40;
+      this.street = createStreet({ size, roadWidth: 10, markings: roadMarkingsTexture(size, props.roads, props.seed) });
+      this.scene.add(this.street.group);
+      this.drivable = drivableMask(b, props.blocks, 1.1);
+      this.limit = Math.max(b.maxX, b.maxZ, -b.minX, -b.minZ) - 10;
+      props.blocks.forEach((blk, i) => {
+        const pts = blk.polygon;
+        for (let k = 0; k < pts.length; k++) {
+          const a = pts[k];
+          const c = pts[(k + 1) % pts.length];
+          this.overlaySegments.push({ a: [a[0], 0.2, a[1]], b: [c[0], 0.2, c[1]], alphaA: 0.45, alphaB: 0.45, dashed: true });
+        }
+        const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+        const cz = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+        this.blocks.push({ name: `BLK ${String(i + 1).padStart(2, '0')}`, x: cx, z: cz });
+      });
+    }
+
+    if (kind === 'deco-block') {
+      const built = buildDecoBlock(props.plots);
+      built.overlayStart = this.overlaySegments.length;
+      this.overlaySegments.push(...built.outline);
+      built.overlayCount = built.outline.length;
+      this.scene.add(built.object);
+      this.entities.set(id, { kind, ...built });
+      return;
     }
 
     const make = factories[kind];

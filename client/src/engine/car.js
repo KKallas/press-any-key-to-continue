@@ -10,7 +10,8 @@ const BRAKE = 20;
 const TURN = 1.7; // radians per second at full lock, at town speed
 
 export class CarControl {
-  constructor({ server, block, id, start, roads }) {
+  // drivable(x, z) -> true where the car may be.
+  constructor({ server, block, id, start, drivable }) {
     this.server = server;
     this.block = block;
     this.id = id;
@@ -18,19 +19,15 @@ export class CarControl {
     this.z = start.z;
     this.heading = start.heading;
     this.speed = 0;
-    this.roads = roads;
+    this.drivable = drivable;
     this.keys = new Set();
     window.addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
   }
 
-  // On a road, with a little margin so the body doesn't clip the kerb.
   onRoad(x, z) {
-    const { list, half, edge } = this.roads;
-    const m = half - 1.1;
-    if (Math.abs(x) > edge - 2 || Math.abs(z) > edge - 2) return false;
-    return list.some((q) => Math.abs(x - q) < m) || list.some((q) => Math.abs(z - q) < m);
+    return this.drivable(x, z);
   }
 
   update(dt) {

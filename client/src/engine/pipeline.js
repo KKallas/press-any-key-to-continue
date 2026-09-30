@@ -166,7 +166,7 @@ const CameraShader = {
 
       // 7. Compression: banding, and blocks that don't quite agree.
       float levels = mix(96.0, 22.0, uCompress);
-      col = floor(col * levels + hash12(blk + 0.5) * 0.6) / levels;
+      col = floor(col * levels + 0.2 + hash12(blk + 0.5) * 0.6) / levels;
       col *= 1.0 + (hash12(blk + floor(uFrame * 0.25)) - 0.5) * 0.05 * uCompress;
 
       // 8. The camera's own electronics.

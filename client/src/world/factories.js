@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { windowTexture, neonTexture, rng } from '../engine/textures.js';
+import { Builder } from './deco.js';
 
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05, ...extra });
@@ -59,6 +60,39 @@ function faceRotation([fx, fz]) {
 }
 
 export const factories = {
+  // A generated city's ground: every block is a raised sidewalk slab with a
+  // darker lot inside it. The roads are simply the gaps between blocks.
+  'city-base'({ blocks }) {
+    const slab = new Builder();
+    const lot = new Builder();
+    const concrete = new THREE.Color(0x2a2c2e);
+    const dark = new THREE.Color(0x0c0d0e);
+    for (const b of blocks) {
+      let pts = b.polygon;
+      let a = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const [x0, z0] = pts[i];
+        const [x1, z1] = pts[(i + 1) % pts.length];
+        a += x0 * z1 - x1 * z0;
+      }
+      if (a < 0) pts = [...pts].reverse();
+      for (let i = 0; i < pts.length; i++) {
+        const p0 = pts[i];
+        const p1 = pts[(i + 1) % pts.length];
+        const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+        slab.wall(p0, p1, 0, 0.15, [(p1[1] - p0[1]) / L, -(p1[0] - p0[0]) / L], concrete, [0, 0]);
+      }
+      slab.cap(pts, 0.15, concrete);
+      for (const l of b.lots ?? []) lot.cap(l, 0.16, dark);
+    }
+    const group = new THREE.Group();
+    const m1 = slab.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45 }));
+    const m2 = lot.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
+    if (m1) group.add(m1);
+    if (m2) group.add(m2);
+    return { object: group };
+  },
+
   'camera-housing'({ position, target, mount }) {
     const group = new THREE.Group();
     const metal = std(0x202326, { metalness: 0.4, roughness: 0.45 });
