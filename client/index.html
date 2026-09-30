@@ -290,6 +290,38 @@
     .crt { padding: 7px 7px 5px; }
   }
 
+  /* Minigames: a panel over the main screen, in the terminal's phosphor. */
+  .mg {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    display: grid;
+    place-items: center;
+    background: rgba(1, 3, 2, 0.55);
+  }
+  .mg-box {
+    width: min(460px, calc(100% - 40px));
+    padding: 16px 20px 18px;
+    background: radial-gradient(120% 100% at 50% 0%, #06180d, #010604 75%);
+    border-radius: 8px;
+    box-shadow: inset 0 0 50px rgba(0,0,0,0.9), 0 0 0 2px #0a0c0b, 0 0 30px rgba(60,255,120,0.06);
+    color: #7dff9a;
+    font-family: var(--font-osd);
+    text-shadow: 0 0 6px rgba(60,255,120,0.4);
+  }
+  .mg-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 22px; letter-spacing: 0.1em; margin-bottom: 14px; }
+  .mg-sub { font-size: 14px; opacity: 0.6; }
+  .mg-body { min-height: 90px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  .mg-foot { margin-top: 12px; text-align: center; font-size: 18px; letter-spacing: 0.12em; min-height: 22px; }
+  .mg-line { font-size: 15px; opacity: 0.7; }
+  .mg-coin { font-size: 56px; width: 80px; height: 80px; line-height: 80px; text-align: center; border: 2px solid #7dff9a; border-radius: 50%; }
+  .mg-bar { position: relative; width: 100%; height: 34px; border: 1px solid rgba(125,255,154,0.4); background: rgba(125,255,154,0.05); overflow: hidden; }
+  .mg-notch { position: absolute; top: 0; bottom: 0; background: rgba(125,255,154,0.22); }
+  .mg-cursor { position: absolute; top: -3px; bottom: -3px; width: 3px; background: #eaffef; box-shadow: 0 0 8px #7dff9a; }
+  .mg-pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; width: 100%; }
+  .mg-pad { aspect-ratio: 1; display: grid; place-items: center; font-size: 26px; border: 1px solid rgba(125,255,154,0.4); background: rgba(125,255,154,0.05); cursor: pointer; user-select: none; }
+  .mg-pad.lit { background: #7dff9a; color: #021; box-shadow: 0 0 18px #7dff9a; }
+
   /* The login front page: a single CRT over black. */
   .login {
     position: fixed;
@@ -384,12 +416,12 @@
         <div class="label"><span class="tag">MAP</span><span id="map-label">LINK</span></div>
       </div>
       <div class="crt small">
-        <div class="screen"><canvas class="snow" aria-label="Spare monitor, no input"></canvas></div>
-        <div class="label"><span class="tag">AUX 1</span><span class="dim">NO INPUT</span></div>
+        <div class="screen"><canvas id="aux1" aria-label="Action selector: what you can do here"></canvas></div>
+        <div class="label"><span class="tag">ACT</span><span id="aux1-label" class="dim">STANDBY</span></div>
       </div>
       <div class="crt small">
-        <div class="screen"><canvas class="snow" aria-label="Spare monitor, no input"></canvas></div>
-        <div class="label"><span class="tag">AUX 2</span><span class="dim">NO INPUT</span></div>
+        <div class="screen"><canvas id="aux2" aria-label="Inventory: what you are carrying"></canvas></div>
+        <div class="label"><span class="tag">KIT</span><span id="aux2-label" class="dim">INVENTORY</span></div>
       </div>
     </div>
 

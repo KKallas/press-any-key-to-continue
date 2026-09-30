@@ -67,6 +67,7 @@ export class World {
     this.obstacles = [];
     this.posts = [];
     this.doors = [];
+    this.booths = [];
     // What a line of sight can hit: building meshes, and each building's
     // footprint to tell which one was hit.
     this.solids = [];
@@ -213,6 +214,11 @@ export class World {
       this.solids.push(built.object);
     }
     if (kind === 'lamp' || kind === 'traffic-light') this.posts.push({ x: props.x, z: props.z, r: 0.2 });
+    if (kind === 'phone-booth') {
+      this.posts.push({ x: props.x, z: props.z, r: 0.6 });
+      this.booths.push({ id, x: props.x, z: props.z });
+      this.posts[this.posts.length - 1].booth = true;
+    }
     if (kind === 'terminal') this.posts.push({ x: props.x, z: props.z, r: 0.6 });
     if (built.update) this.updaters.push(built.update);
     if (built.rainLights) {
@@ -267,7 +273,10 @@ export class World {
       this.posts.push(...props.posts);
       this.propCounts = props.counts;
     }
-    this.carFree = collisionMap(b, this.obstacles, this.posts, 1.1, 2);
+    // Booths are solid to a person but not to a car (a car never needs to sit
+    // in one), so they stay out of the car's collision to avoid wedging it.
+    const carPosts = this.posts.filter((p) => !p.booth);
+    this.carFree = collisionMap(b, this.obstacles, carPosts, 1.1, 2);
     this.footFree = collisionMap(b, this.obstacles, this.posts, 0.3, 4);
   }
 

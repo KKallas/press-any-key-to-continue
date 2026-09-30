@@ -53,6 +53,39 @@ function insidePoly([x, z], pts) {
   return c;
 }
 
+// Phone booths on the sidewalks: a way online out in the open, but out in the
+// open. Spaced well apart, only where there's pavement to stand on.
+function placeBooths(city, count) {
+  const booths = [];
+  const onSidewalk = ([x, z]) => city.blocks.some((b) => insidePoly([x, z], b.polygon));
+  let n = 0;
+  for (const road of city.roads) {
+    if (road.width < 9) continue;
+    const pts = road.points;
+    for (let i = 0; i < pts.length - 1 && booths.length < count; i++) {
+      const [x0, z0] = pts[i];
+      const [x1, z1] = pts[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 24) continue;
+      const ux = (x1 - x0) / L;
+      const uz = (z1 - z0) / L;
+      const d = L * (0.4 + 0.2 * ((i + n) % 2));
+      const off = road.width / 2 + 2.0;
+      const side = n % 2 ? 1 : -1;
+      const x = x0 + ux * d - uz * off * side;
+      const z = z0 + uz * d + ux * off * side;
+      n++;
+      if (!onSidewalk([x, z])) continue;
+      if (booths.some((b) => Math.hypot(b.x - x, b.z - z) < 40)) continue;
+      booths.push({ x, z, heading: Math.atan2(ux, uz) });
+    }
+  }
+  return booths.map((b, i) => ({
+    t: 0, block: B, type: 'spawn', kind: 'phone-booth', id: `booth${i + 1}`,
+    props: { x: b.x, z: b.z, heading: b.heading },
+  }));
+}
+
 // Where the car starts: the middle of the biggest road.
 function startPoint(city) {
   const road = [...city.roads].sort((a, b) => b.width - a.width || b.points.length - a.points.length)[0];
@@ -83,6 +116,7 @@ export function cityToEvents(city) {
     events.push({ t: 0, block: B, type: 'spawn', kind: 'deco-block', id: `bld-${block}`, props: { block, plots } });
   }
   events.push(...placeLamps(city, 40, 6, start));
+  events.push(...placeBooths(city, 14));
   events.push({ t: 0, block: B, type: 'spawn', kind: 'car', id: 'car1',
     props: { x: start.x, z: start.z, heading: start.heading, color: '#b3121a', lights: true } });
   events.push({ t: 0, block: B, type: 'spawn', kind: 'drone', id: 'UAV-2',

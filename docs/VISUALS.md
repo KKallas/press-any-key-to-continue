@@ -110,6 +110,21 @@ The page is a monitor rack from an outside-broadcast truck: rack rails with thei
 
 On a phone the three small monitors sit in a row under the big one.
 
+## The two working monitors
+
+The spare CRTs are working screens now.
+
+**ACT — the action selector (middle).** It shows what you can do where you're standing, as a numbered menu: pick with the number keys, a click on the screen, or `E` for the top one. The list is rebuilt every frame from your place and your kit, so the same screen carries a bank break-in, a phone booth, a respray, or a café — and a fuller, prompt-written set of actions can drop into the same slot later without touching anything else. Break into a place and it hands you a **minigame**: a coin toss or a lockpick for physical access, a wiretap for system access you come back to hack. They're deliberately small and swappable, and start easy on purpose; the rule underneath is that a human who knows the trick beats an agent solving it cold.
+
+**KIT — the inventory (bottom).** What the skin carries, each with a glyph. Kit is what turns a place into an option: the **US Robotics 56.6k modem** makes a phone booth or a café line a way online; the **luggable PC** is what you carry it on. New gear unlocks new actions at the places that want it.
+
+## Places
+
+- **Phone booths** stand on the sidewalks. Jack in with the modem and you're online in the open — safe for about three minutes, then the patrol that clocked you is back, and if you're still plugged in it interferes. The KIT screen counts the safe seconds down.
+- **Internet cafés** (one or two in the city) are the opposite trade: a quarter of an hour of quiet work, but the police stake out the door — once you've worked there, leaving is an arrest.
+- **Banks** are worth breaking into. Closed at this hour, so it's force entry (a lockpick) for physical access, then a wiretap to crack the system; come back later to hack what you opened.
+- **Parking entrances** sit on most road-facing buildings: pull in and the car is out of the drone's sight, so the heat cools. A few are **respray garages** — drive in dirty, drive out clean and a different colour, heat gone, like a GTA spray shop.
+
 ## The link and the law
 
 **The link.** The map monitor names a building and a time on the clock: `LINK P0206 BY 23:59:30`. Get the skin there (by car to its door, or into the building) before the clock reads it. Nobody says what the link is for. The clock only ever reads 23:59, so the window is seconds, and it's set tight: a careful drive won't quite make it. You'll have to cut across the grass or speed. On the drone feed the link is a diamond on the ground with a countdown, or an arrow on the edge of the picture pointing the way.

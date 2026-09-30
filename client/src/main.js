@@ -24,6 +24,10 @@ import { Sound } from './engine/audio.js';
 import { Mission } from './game/mission.js';
 import { Pursuit } from './game/pursuit.js';
 import { buildInterior } from './world/interior.js';
+import { ActionScreen, InventoryScreen } from './engine/monitors.js';
+import { Inventory } from './game/items.js';
+import { assignPlaces } from './game/places.js';
+import { MINIGAMES } from './game/minigames.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -145,7 +149,7 @@ const autopilot = new Autopilot({
 
 // The law: patrols, roadblocks, agents. Needs the street network.
 const pursuit = roads
-  ? new Pursuit({ server, block: BLOCK, world, roads, carNav, player: { car, walker, mode: () => mode } })
+  ? new Pursuit({ server, block: BLOCK, world, roads, carNav, player: { car, walker, mode: () => mode, hidden: () => !!parked } })
   : null;
 if (pursuit) car.free = pursuit.playerFree();
 
@@ -188,6 +192,61 @@ if (roads && world.junctions) {
     server.append({ block: BLOCK, type: 'spawn', kind: 'traffic-light', id: `tl${tl}`, props: { x, z, state: phases[tl % phases.length] } });
     tl++;
   }
+}
+
+// Places: what each building is, and where the car can pull in. Plus the two
+// working monitors — the action selector (ACT) and the inventory (KIT).
+let places = { kindOf: new Map(), parking: new Map() };
+if (roads) {
+  places = assignPlaces(
+    world.plots ?? [],
+    (x, z) => roads.nearest(x, z)?.d ?? Infinity,
+    (x, z) => world.carFree(x, z),
+  );
+}
+const kindOf = (plot) => places.kindOf.get(plot) ?? 'plain';
+const inventory = new Inventory(['laptop', 'modem']);
+const access = new Map(); // plot -> { physical, system, hacked }
+const accessOf = (plot) => access.get(plot) ?? { physical: false, system: false, hacked: false };
+const actScreen = new ActionScreen($('aux1'));
+const kitScreen = new InventoryScreen($('aux2'));
+
+// The working state a place can put you in.
+let booth = null; // { id, x, z, start } jacked into a phone booth
+let cafe = null; // { plot, used, start } inside an internet café
+let parked = null; // { plot, respray } the car pulled into an entrance
+let busy = false; // a minigame is up
+let selected = 0; // the highlighted action
+
+const REACH_BOOTH = 3.0;
+const REACH_PARK = 6.0;
+const BOOTH_GRACE = 180; // seconds a booth is safe before the patrol is back
+const CAFE_SAFE = 900; // seconds an internet café is quiet
+
+function nearestBooth() {
+  let best = null;
+  let bd = REACH_BOOTH;
+  for (const b of world.booths) {
+    const d = Math.hypot(b.x - walker.x, b.z - walker.z);
+    if (d < bd) {
+      bd = d;
+      best = b;
+    }
+  }
+  return best;
+}
+function parkingInReach() {
+  if (Math.abs(car.speed) > 3) return null;
+  let best = null;
+  let bd = REACH_PARK;
+  for (const [plot, e] of places.parking) {
+    const d = Math.hypot(e.hx - car.x, e.hz - car.z);
+    if (d < bd) {
+      bd = d;
+      best = { plot, ...e };
+    }
+  }
+  return best;
 }
 
 droneControl.limit = world.limit ?? 70;
@@ -283,6 +342,203 @@ function skinLost() {
   droneControl.locked = true;
   syncHint();
 }
+// ---- The action selector: what you can do where you're standing -----------
+// The middle monitor. Its list is rebuilt each frame from where you are and
+// what you carry; picking an item (E, a number key, or a click on ACT) runs
+// it. A bank you break into, a booth you jack into, a garage that loses your
+// heat — all the same menu, and a prompt could fill it with more later.
+
+function enterBuilding(door, asCafe = false) {
+  insideDoor = door;
+  walker.route = null;
+  walker.active = false;
+  mode = 'inside';
+  server.append({ block: BLOCK, type: 'enter', id: 'skin', props: { plot: door.plot, x: walker.x, z: walker.z } });
+  interior = buildInterior(door.plot, door.plot.length * 7 + door.plot.charCodeAt(door.plot.length - 1));
+  if (asCafe) {
+    interior.name = 'INT CAFÉ';
+    interior.description = 'INTERNET CAFÉ · CCTV';
+    cafe = { plot: door.plot, used: false, start: 0 };
+  }
+  loss = 1;
+  setActive(interior);
+  syncHint();
+}
+
+function leaveBuilding() {
+  // An internet café you've worked in is watched: the door is an arrest.
+  if (cafe && cafe.used) {
+    say('POLICE AT THE DOOR', 3);
+    cafe = null;
+    skinLost();
+    return;
+  }
+  cafe = null;
+  walker.place(insideDoor.hx, insideDoor.hz, false);
+  server.append({ block: BLOCK, type: 'exit', id: 'skin', props: { plot: insideDoor.plot, x: walker.x, z: walker.z } });
+  walker.active = true;
+  mode = 'foot';
+  insideDoor = null;
+  interior = null;
+  loss = 0.8;
+  setActive(drone);
+  syncHint();
+}
+
+async function runGame(kind, diff) {
+  busy = true;
+  syncHint();
+  const ok = await MINIGAMES[kind](diff);
+  busy = false;
+  return ok;
+}
+
+async function forceEntry(door) {
+  const ok = await runGame('lockpick', 0.15);
+  if (ok) {
+    access.set(door.plot, { ...accessOf(door.plot), physical: true });
+    say('IN', 1.5);
+    enterBuilding(door);
+  } else {
+    say('WOULDN\'T BUDGE', 2);
+    if (pursuit) pursuit.heat = Math.min(1, pursuit.heat + 0.2); // the noise carries
+  }
+}
+
+async function crackSystem() {
+  const ok = await runGame('wiretap', 0.2);
+  if (ok) {
+    access.set(insideDoor.plot, { ...accessOf(insideDoor.plot), system: true });
+    say('SYSTEM MAPPED — COME BACK TO HACK IT', 3);
+  } else {
+    say('LOCKED OUT', 2);
+  }
+}
+
+async function hackSystem() {
+  const ok = await runGame('wiretap', 0.55);
+  if (ok) {
+    access.set(insideDoor.plot, { ...accessOf(insideDoor.plot), hacked: true });
+    say('SYSTEM OWNED', 3);
+  } else {
+    say('TRACE — BACK OUT', 2);
+  }
+}
+
+function jackBooth(b) {
+  booth = { id: b.id, x: b.x, z: b.z, start: performance.now() / 1000 };
+  say('ONLINE — WATCH THE STREET', 2.5);
+}
+function endBooth(interfered = false) {
+  booth = null;
+  if (interfered) {
+    say('A COP — PULL THE PLUG', 2.5);
+    if (pursuit) pursuit.heat = Math.min(1, pursuit.heat + 0.25);
+  }
+  syncHint();
+}
+
+function parkCar(entry) {
+  parked = { plot: entry.plot, respray: entry.respray };
+  car.place(entry.hx, entry.hz, Math.atan2(-entry.nz, entry.nx));
+  server.append({ block: BLOCK, type: 'move', transient: true, id: 'car1', props: { x: entry.hx, z: entry.hz, visible: false } });
+  car.hidden = true;
+  say('PARKED — OUT OF SIGHT', 2);
+}
+function pullOut() {
+  parked = null;
+  car.hidden = false;
+  server.append({ block: BLOCK, type: 'move', transient: true, id: 'car1', props: { x: car.x, z: car.z, visible: true } });
+}
+function respray(entry) {
+  if (pursuit) pursuit.heat = 0;
+  // A new coat: recolor the car's paint.
+  const obj = world.entities.get('car1')?.object;
+  const palette = ['#1a1a1e', '#26343f', '#2f5030', '#5a2530', '#3a3550', '#6a5320'];
+  const col = palette[Math.floor(Math.random() * palette.length)];
+  obj?.traverse((mm) => {
+    if (mm.isMesh && mm.material?.metalness >= 0.3 && mm.material.color && mm.geometry?.parameters?.width > 1) mm.material.color.set(col);
+  });
+  say('RESPRAYED · HEAT OFF', 3);
+}
+
+// The list for the ACT monitor, most useful first. Each: { label, run,
+// disabled?, note? }.
+function buildActions() {
+  if (busy) return [];
+  const A = [];
+  if (booth) {
+    A.push({ label: 'PULL THE PLUG', run: () => endBooth(false) });
+    return A;
+  }
+  if (mode === 'inside') {
+    const k = kindOf(insideDoor.plot);
+    const acc = accessOf(insideDoor.plot);
+    if (cafe) {
+      if (!cafe.used) A.push({ label: 'JACK IN · 15 MIN', run: () => { cafe.used = true; cafe.start = performance.now() / 1000; say('WORKING — STAY INSIDE', 3); } });
+      A.push({ label: cafe.used ? 'LEAVE · ARREST' : 'LEAVE', run: leaveBuilding });
+      return A;
+    }
+    if (k === 'bank') {
+      if (acc.system && !acc.hacked) A.push({ label: 'HACK THE VAULT', run: hackSystem });
+      else if (!acc.system) A.push({ label: 'CRACK THE SYSTEM', run: crackSystem, need: 'laptop', disabled: !inventory.has('laptop'), note: 'need a laptop' });
+      else A.push({ label: 'SYSTEM OWNED', disabled: true });
+    }
+    A.push({ label: 'LEAVE', run: leaveBuilding });
+    return A;
+  }
+  if (mode === 'car') {
+    if (parked) {
+      A.push({ label: 'PULL OUT', run: pullOut });
+      return A;
+    }
+    const e = parkingInReach();
+    if (e) {
+      if (e.respray) A.push({ label: 'RESPRAY · LOSE HEAT', run: () => respray(e) });
+      else A.push({ label: 'PULL INTO PARKING', run: () => parkCar(e) });
+    }
+    if (Math.abs(car.speed) <= 3) A.push({ label: 'GET OUT', run: use });
+    return A;
+  }
+  // On foot.
+  const b = nearestBooth();
+  if (b) A.push({ label: 'JACK IN · BOOTH', run: () => jackBooth(b), need: 'modem', disabled: !inventory.has('modem'), note: 'need a modem' });
+  const door = nearestDoor();
+  if (door) {
+    const k = kindOf(door.plot);
+    const acc = accessOf(door.plot);
+    if (k === 'cafe') A.push({ label: 'ENTER CAFÉ', run: () => enterBuilding(door, true) });
+    else if (k === 'bank' && !acc.physical) A.push({ label: 'FORCE ENTRY', run: () => forceEntry(door), need: 'lockpicks' });
+    else A.push({ label: `ENTER ${door.plot.toUpperCase()}`, run: () => enterBuilding(door) });
+  }
+  if (carInReach()) A.push({ label: 'GET IN', run: use });
+  return A;
+}
+
+let actions = [];
+function doAction(i) {
+  if (busy) return;
+  actions = buildActions(); // always act on what's true right now
+  const a = actions[i];
+  if (!a || a.disabled || !a.run) return;
+  selected = i;
+  a.run();
+}
+const primaryAction = () => doAction(0);
+
+// The place you're standing in, for the ACT monitor's title.
+function placeTitle() {
+  if (busy) return 'WORKING';
+  if (booth) return 'PHONE BOOTH';
+  if (mode === 'inside') return cafe ? 'INTERNET CAFÉ' : `${kindOf(insideDoor.plot).toUpperCase()} · ${insideDoor.plot.toUpperCase()}`;
+  if (mode === 'car') return parked ? 'PARKED' : parkingInReach() ? 'ENTRANCE' : 'CAR-1';
+  const d = nearestBooth();
+  if (d) return 'PHONE BOOTH';
+  const door = nearestDoor();
+  if (door) return `${kindOf(door.plot).toUpperCase()} · ${door.plot.toUpperCase()}`;
+  return 'ON FOOT';
+}
+
 const hud = new Hud();
 
 // Quality.
@@ -608,7 +864,11 @@ function ghostOutline() {
 }
 
 function drawHud(time) {
-  const near = mode === 'car' ? [] : world.doors.filter((d) => Math.hypot(d.hx - walker.x, d.hz - walker.z) < 45);
+  const [px, pz] = mode === 'car' ? [car.x, car.z] : [walker.x, walker.z];
+  const near = mode === 'car' ? [] : world.doors.filter((d) => Math.hypot(d.hx - px, d.hz - pz) < 45);
+  // Booths and parking entrances show on the feed too, so you can find them.
+  for (const b of world.booths) if (Math.hypot(b.x - px, b.z - pz) < 55) near.push({ hx: b.x, hz: b.z, kind: 'booth', plot: 'booth' });
+  for (const [plot, e] of places.parking) if (Math.hypot(e.hx - px, e.hz - pz) < 55) near.push({ hx: e.hx, hz: e.hz, kind: e.respray ? 'respray' : 'parking', plot });
   hud.draw({
     camera: drone.camera,
     segments: world.overlaySegments,
@@ -692,7 +952,9 @@ function waypoint([x, z], fast, building = null) {
   const toCar = !door && Math.hypot(car.x - x, car.z - z) < 3.5;
   const target = door ? [door.hx, door.hz] : [x, z];
   const pts = footNav.findPath([walker.x, walker.z], target, { offRoad: 1 });
-  if (!pts || !walker.follow(pts, fast, door || toCar ? use : null)) {
+  // Arriving at a door or the car runs the primary action there — so walking
+  // to a bank ends in FORCE ENTRY, not a plain enter.
+  if (!pts || !walker.follow(pts, fast, door || toCar ? primaryAction : null)) {
     say('NO WAY THROUGH');
     return;
   }
@@ -721,16 +983,24 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     document.activeElement?.blur?.();
   }
-  if (e.key === '1') applyTier('low');
-  else if (e.key === '2') applyTier('mid');
-  else if (e.key === '3') applyTier('high');
-  else if (e.key === 'g' || e.key === 'G') $('grade').click();
+  // Number keys pick an action off the ACT monitor (unless a minigame has the
+  // keyboard). Quality lives on the LOW/MID/HIGH buttons now.
+  if (e.key >= '1' && e.key <= '9' && !busy) {
+    doAction(Number(e.key) - 1);
+  } else if (e.key === 'g' || e.key === 'G') $('grade').click();
   else if (e.key === 'Escape' && !active.interior) backToDrone();
-  else if ((e.key === 'e' || e.key === 'E' || e.key === 'Enter') && (active === drone || active.interior) && !e.repeat) use();
+  else if ((e.key === 'e' || e.key === 'E' || e.key === 'Enter') && (active === drone || active.interior) && !e.repeat && !busy) primaryAction();
   else if (e.key === 'Tab') {
     e.preventDefault();
     nextCamera();
   }
+});
+
+// Clicking a row on the ACT monitor runs it.
+$('aux1').addEventListener('click', (e) => {
+  const r = $('aux1').getBoundingClientRect();
+  const i = actScreen.pick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  if (i >= 0) doAction(i);
 });
 
 let resizeTimer;
@@ -783,6 +1053,14 @@ function game(dt, time) {
     else if (r === 'next') mission.next(time, [px, pz]);
     $('map-label').textContent = mission.state === 'open' ? `BY ${mission.clock}` : mission.state === 'made' ? 'MADE' : mission.state === 'lost' ? 'LOST' : 'LINK';
   }
+  // The phone booth: safe for a while, then the patrol is back. Stay jacked in
+  // past its grace and the cop interferes.
+  const nowS = performance.now() / 1000;
+  if (booth && nowS - booth.start > BOOTH_GRACE) endBooth(true);
+
+  // The two working monitors, and the action list they show.
+  actions = buildActions();
+  if (selected >= actions.length) selected = Math.max(0, actions.length - 1);
   monitorT -= dt;
   if (monitorT <= 0) {
     monitorT = 1 / 8;
@@ -796,7 +1074,13 @@ function game(dt, time) {
       heat: pursuit?.heat ?? 0,
       heatLabel: pursuit?.label(),
     });
-    snow.draw(time);
+    actScreen.draw({ now: time, title: placeTitle(), actions, selected, busy });
+    const boothLeft = booth ? Math.max(0, BOOTH_GRACE - (nowS - booth.start)) : null;
+    kitScreen.draw({
+      now: time,
+      items: inventory.list(),
+      hint: booth ? `SAFE ${Math.ceil(boothLeft)}s` : cafe && cafe.used ? 'DO NOT LEAVE' : '',
+    });
   }
 }
 
@@ -821,11 +1105,11 @@ function frame(now) {
     if (car.keyboardActive) autopilot.cancel(); // hands on the wheel: manual
     else input = autopilot.update(dt / 1000) ?? undefined;
   }
-  car.update(dt / 1000, input);
+  if (!parked) car.update(dt / 1000, input);
   walker.update(dt / 1000);
   game(dt / 1000, time);
   if (net) {
-    net.setMode(mode);
+    net.setMode(parked || mode === 'inside' ? 'inside' : mode);
     net.tick(now);
   }
   if (active === drone) droneControl.update(dt / 1000);
@@ -865,4 +1149,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { net, mission, pursuit, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { net, mission, pursuit, inventory, access, places, MINIGAMES, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };

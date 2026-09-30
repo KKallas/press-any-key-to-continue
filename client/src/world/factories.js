@@ -334,6 +334,38 @@ export const factories = {
     return { object: group };
   },
 
+  // A phone booth: a tall glass box with an interior light and a red hood.
+  // Somewhere to jack the modem in, out on the street.
+  'phone-booth'({ x, z, heading = 0 }) {
+    const group = new THREE.Group();
+    const frame = std(0x9a2b1f, { metalness: 0.3, roughness: 0.5 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x0a1518, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.5 });
+    const base = new THREE.Mesh(box(1.0, 0.1, 1.0), std(0x15171a));
+    base.position.y = 0.2;
+    group.add(base);
+    for (const [sx, sz] of [[-0.48, 0], [0.48, 0], [0, -0.48], [0, 0.48]]) {
+      const post = new THREE.Mesh(box(0.08, 2.2, 0.08), frame);
+      post.position.set(sx, 1.3, sz);
+      group.add(post);
+    }
+    const pane = new THREE.Mesh(box(0.94, 1.7, 0.94), glass);
+    pane.position.y = 1.35;
+    group.add(pane);
+    const hood = new THREE.Mesh(box(1.08, 0.35, 1.08), frame);
+    hood.position.y = 2.45;
+    group.add(hood);
+    // The warm light inside, and its glow so it reads at night.
+    const lamp = new THREE.Mesh(box(0.7, 0.05, 0.7), glow('#ffdca8', 4));
+    lamp.position.y = 2.25;
+    group.add(lamp);
+    const cone = lightCone('#ffe4b0', 1.6, 3, 0.03);
+    cone.position.y = 2.2;
+    group.add(cone);
+    group.position.set(x, 0, z);
+    group.rotation.y = heading;
+    return { object: group, rainLights: [{ position: new THREE.Vector3(x, 2.2, z), color: new THREE.Color('#ffe4b0'), strength: 0.6 }] };
+  },
+
   terminal({ x, z, face }) {
     const group = new THREE.Group();
     const body = new THREE.Mesh(box(0.9, 1.9, 0.6), std(0x1d2124, { metalness: 0.3, roughness: 0.4 }));

@@ -176,6 +176,198 @@ export class MapScreen {
   }
 }
 
+// A small CRT that draws itself at a low resolution, with the tube's own
+// rounding and a scanline wash. ActionScreen and InventoryScreen share it.
+class SmallCRT {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.g = canvas.getContext('2d');
+    this.rows = []; // clickable [y0, y1, index] bands, for pointer picking
+    this.fit();
+  }
+  fit() {
+    const c = this.canvas;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(160, Math.round(c.clientWidth * dpr * 0.8));
+    const h = Math.max(120, Math.round(c.clientHeight * dpr * 0.8));
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+  }
+  begin(now) {
+    this.fit();
+    const g = this.g;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    g.fillStyle = '#020403';
+    g.fillRect(0, 0, W, H);
+    this.W = W;
+    this.H = H;
+    this.k = W / 240; // scale so text sizes read on any tube
+    return g;
+  }
+  end(now) {
+    const g = this.g;
+    // Scanline wash + a slow roll bar, so it looks alive.
+    g.globalAlpha = 0.06;
+    g.fillStyle = '#8dffa8';
+    for (let y = 0; y < this.H; y += 3) g.fillRect(0, y, this.W, 1);
+    g.globalAlpha = 0.05;
+    const ry = ((now * 40) % (this.H + 40)) - 20;
+    g.fillRect(0, ry, this.W, 16);
+    g.globalAlpha = 1;
+  }
+  // Turn a pointer position (canvas-relative 0..1) into a row index, or -1.
+  pick(fx, fy) {
+    const y = fy * this.H;
+    for (const [y0, y1, i] of this.rows) if (y >= y0 && y <= y1) return i;
+    return -1;
+  }
+}
+
+const GRN = (a) => `rgba(141,255,168,${a})`;
+
+// AUX 1: the action selector. It shows what you can do where you're standing,
+// as a numbered menu — the middle monitor the player lives in. What's on it is
+// just a list handed in each frame, so the same screen serves a bank break-in,
+// a phone booth, or a respray, and a fuller list can be generated later from a
+// prompt without touching this.
+export class ActionScreen extends SmallCRT {
+  // s: { now, title, actions:[{label, need, disabled, note}], selected, busy }
+  draw(s) {
+    const g = this.begin(s.now);
+    const W = this.W;
+    const H = this.H;
+    const k = this.k;
+    this.rows = [];
+    g.textBaseline = 'top';
+    g.textAlign = 'left';
+    g.fillStyle = GRN(0.9);
+    g.font = `${Math.round(15 * k)}px "VT323", monospace`;
+    g.fillText((s.title || 'NO ACTION').slice(0, 22), 10 * k, 8 * k);
+    g.strokeStyle = GRN(0.3);
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(8 * k, 28 * k);
+    g.lineTo(W - 8 * k, 28 * k);
+    g.stroke();
+
+    const acts = s.actions ?? [];
+    if (s.busy) {
+      g.fillStyle = GRN(0.8);
+      g.font = `${Math.round(14 * k)}px "VT323", monospace`;
+      g.fillText('… working', 12 * k, 40 * k);
+      this.end(s.now);
+      return;
+    }
+    if (!acts.length) {
+      g.fillStyle = GRN(0.4);
+      g.font = `${Math.round(13 * k)}px "VT323", monospace`;
+      g.fillText('nothing to do here.', 12 * k, 42 * k);
+      g.fillText('find a door, a booth,', 12 * k, 58 * k);
+      g.fillText('a way in.', 12 * k, 74 * k);
+      this.end(s.now);
+      return;
+    }
+    let y = 36 * k;
+    const rowH = 22 * k;
+    acts.forEach((a, i) => {
+      const on = i === s.selected;
+      const usable = !a.disabled;
+      g.fillStyle = usable ? GRN(on ? 1 : 0.8) : GRN(0.3);
+      if (on && usable) {
+        g.fillStyle = GRN(0.14);
+        g.fillRect(6 * k, y - 2 * k, W - 12 * k, rowH - 2 * k);
+        g.fillStyle = GRN(1);
+      }
+      g.font = `${Math.round(15 * k)}px "VT323", monospace`;
+      const label = `${i + 1}. ${a.label}`;
+      g.fillText(label.slice(0, 24), 10 * k, y);
+      if (a.disabled && a.note) {
+        g.fillStyle = GRN(0.35);
+        g.font = `${Math.round(11 * k)}px "VT323", monospace`;
+        g.fillText(a.note.slice(0, 30), 14 * k, y + 12 * k);
+      }
+      this.rows.push([y - 2 * k, y + rowH - 4 * k, i]);
+      y += rowH + (a.disabled && a.note ? 8 * k : 0);
+    });
+    g.fillStyle = GRN(0.4);
+    g.font = `${Math.round(11 * k)}px "VT323", monospace`;
+    g.fillText('KEYS 1-9 · CLICK', 10 * k, H - 14 * k);
+    this.end(s.now);
+  }
+}
+
+// AUX 2: the inventory. What you're carrying, each with a glyph, and a line
+// on the selected one.
+export class InventoryScreen extends SmallCRT {
+  // s: { now, items:[{id,name,note,glyph}], hint }
+  draw(s) {
+    const g = this.begin(s.now);
+    const W = this.W;
+    const H = this.H;
+    const k = this.k;
+    g.textBaseline = 'top';
+    g.textAlign = 'left';
+    g.fillStyle = GRN(0.9);
+    g.font = `${Math.round(15 * k)}px "VT323", monospace`;
+    g.fillText('KIT', 10 * k, 8 * k);
+    g.strokeStyle = GRN(0.3);
+    g.beginPath();
+    g.moveTo(8 * k, 28 * k);
+    g.lineTo(W - 8 * k, 28 * k);
+    g.stroke();
+    const items = s.items ?? [];
+    if (!items.length) {
+      g.fillStyle = GRN(0.4);
+      g.font = `${Math.round(13 * k)}px "VT323", monospace`;
+      g.fillText('empty pockets.', 12 * k, 42 * k);
+      this.end(s.now);
+      return;
+    }
+    let y = 38 * k;
+    for (const it of items) {
+      this.glyph(g, 16 * k, y + 7 * k, 9 * k, it.glyph);
+      g.fillStyle = GRN(0.85);
+      g.font = `${Math.round(14 * k)}px "VT323", monospace`;
+      g.fillText(it.name.slice(0, 20), 32 * k, y);
+      g.fillStyle = GRN(0.35);
+      g.font = `${Math.round(10 * k)}px "VT323", monospace`;
+      g.fillText((it.note || '').slice(0, 30), 32 * k, y + 13 * k);
+      y += 30 * k;
+    }
+    if (s.hint) {
+      g.fillStyle = GRN(0.4);
+      g.font = `${Math.round(11 * k)}px "VT323", monospace`;
+      g.fillText(s.hint.slice(0, 30), 10 * k, H - 14 * k);
+    }
+    this.end(s.now);
+  }
+  glyph(g, cx, cy, r, kind) {
+    g.strokeStyle = GRN(0.8);
+    g.lineWidth = Math.max(1, r * 0.16);
+    g.beginPath();
+    if (kind === 'laptop') {
+      g.rect(cx - r, cy - r * 0.6, r * 2, r * 1.1);
+      g.moveTo(cx - r * 1.2, cy + r * 0.6);
+      g.lineTo(cx + r * 1.2, cy + r * 0.6);
+    } else if (kind === 'modem') {
+      g.rect(cx - r, cy - r * 0.5, r * 2, r);
+      g.moveTo(cx - r * 0.6, cy);
+      g.lineTo(cx + r * 0.6, cy);
+    } else if (kind === 'pick') {
+      g.moveTo(cx - r, cy + r);
+      g.lineTo(cx + r, cy - r);
+      g.moveTo(cx + r * 0.4, cy - r);
+      g.lineTo(cx + r, cy - r);
+    } else {
+      g.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+    }
+    g.stroke();
+  }
+}
+
 // Snow for a monitor with nothing plugged in: a few frames made once and
 // cycled, dim, with a slow roll bar.
 export class Snow {

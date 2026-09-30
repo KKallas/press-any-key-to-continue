@@ -71,6 +71,7 @@ export class Pursuit {
   body() {
     const p = this.player;
     const mode = p.mode();
+    if (p.hidden && p.hidden()) return { x: p.car.x, z: p.car.z, id: null, visible: false };
     if (mode === 'car') return { x: p.car.x, z: p.car.z, id: 'car1', visible: true };
     if (mode === 'foot') return { x: p.walker.x, z: p.walker.z, id: 'skin', visible: true };
     return { x: p.car.x, z: p.car.z, id: null, visible: false };
