@@ -21,7 +21,8 @@ import path from 'node:path';
 import url from 'node:url';
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
-import { parseSignup } from './auth.mjs';
+import { parseSignup, parseLogin } from './auth.mjs';
+import { OperatorDB } from './db.mjs';
 
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const CLIENT = path.join(HERE, '..', 'client');
@@ -30,21 +31,40 @@ const MAX_PLAYERS = 100;
 const TICK_MS = 80; // snapshot rate: 12.5 Hz
 const IDLE_MS = 15000; // drop a player we haven't heard from in this long
 
-// pending: token -> { name, color } minted at signup, claimed by the socket.
+// The accounts that persist between sessions.
+const db = new OperatorDB();
+// pending: token -> { name, color } minted at sign-up / login, claimed by the
+// socket that connects with it, then spent.
 const pending = new Map();
 // players: id -> live record.
 const players = new Map();
-let nextColor = 0;
 
-// Sign-up is an injection at the login; the parser lives in auth.mjs and
-// never touches a database. A plain login is turned away.
+function mintToken(name, color) {
+  const token = crypto.randomBytes(16).toString('hex');
+  pending.set(token, { name, color });
+  setTimeout(() => pending.delete(token), 60000).unref?.();
+  return token;
+}
+
+// Sign-up: an injection creates a persistent operator and hands back a key to
+// keep. A known handle typed plainly is bounced to the key prompt. Anything
+// else is turned away. The parser (auth.mjs) never runs the string against
+// anything.
 function signup(payload) {
-  const r = parseSignup(payload?.line, players.size + pending.size, MAX_PLAYERS, nextColor);
+  const live = players.size + pending.size;
+  const r = parseSignup(payload?.line, db, live, MAX_PLAYERS);
+  if (!r.ok) return r; // needKey or reason
+  const token = mintToken(r.handle, r.color);
+  return { ok: true, created: true, handle: r.handle, key: r.key, color: r.color, token };
+}
+
+// Log in: a returning operator with their handle and key.
+function loginReturning(payload) {
+  const live = players.size + pending.size;
+  const r = parseLogin(payload?.handle, payload?.key, db, live, MAX_PLAYERS);
   if (!r.ok) return r;
-  nextColor++;
-  pending.set(r.token, { name: r.name, color: r.color });
-  setTimeout(() => pending.delete(r.token), 60000).unref?.();
-  return r;
+  const token = mintToken(r.handle, r.color);
+  return { ok: true, handle: r.handle, color: r.color, runs: r.runs, token };
 }
 
 // ---- Static files -----------------------------------------------------------
@@ -73,26 +93,37 @@ function end(res, code, body, type = 'text/plain') {
   res.end(body);
 }
 
+function readJson(req, cb) {
+  let body = '';
+  req.on('data', (c) => {
+    body += c;
+    if (body.length > 4000) req.destroy();
+  });
+  req.on('end', () => {
+    try {
+      cb(JSON.parse(body || '{}'));
+    } catch {
+      cb({});
+    }
+  });
+}
+
 const httpServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://localhost');
   if (u.pathname === '/api/signup' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (c) => {
-      body += c;
-      if (body.length > 4000) req.destroy();
-    });
-    req.on('end', () => {
-      let payload = {};
-      try {
-        payload = JSON.parse(body || '{}');
-      } catch {}
+    return readJson(req, (payload) => {
       const r = signup(payload);
       end(res, r.ok ? 200 : 403, JSON.stringify(r), 'application/json');
     });
-    return;
+  }
+  if (u.pathname === '/api/login' && req.method === 'POST') {
+    return readJson(req, (payload) => {
+      const r = loginReturning(payload);
+      end(res, r.ok ? 200 : 403, JSON.stringify(r), 'application/json');
+    });
   }
   if (u.pathname === '/api/status') {
-    return end(res, 200, JSON.stringify({ players: players.size, max: MAX_PLAYERS }), 'application/json');
+    return end(res, 200, JSON.stringify({ players: players.size, max: MAX_PLAYERS, operators: db.size }), 'application/json');
   }
   serveStatic(req, res);
 });

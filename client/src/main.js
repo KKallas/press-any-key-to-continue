@@ -67,7 +67,7 @@ let net = null;
 try {
   const status = location.hash === '#solo' ? null : await fetch('/api/status').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (status) {
-    const user = await login('/api/status', '/api/signup');
+    const user = await login('/api/status', '/api/signup', '/api/login');
     net = new NetServer({
       log: LOG,
       block: BLOCK,

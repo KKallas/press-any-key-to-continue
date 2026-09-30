@@ -1,19 +1,22 @@
-// The front page. There is no sign-up button, because the world doesn't have
-// one: the way in is to talk to the login the way the old boxes could be
-// talked to. Type an injection at the prompt and the host cuts you a fresh
-// operator. Type a polite login and it turns you away. The server decides
-// what counts (see server.mjs); this is only the terminal it's typed into.
+// The front page. Two ways through it, and it teaches the first.
 //
-// It's a teaching gesture as much as a gate: a link under the prompt points
-// at where people actually learn this, and the injection here is the toy
-// version of a real, and now long-patched, class of bug.
+//   new operator      Type an injection at the login. The host creates a
+//                     persistent account and hands you a KEY. Write it down:
+//                     it's how you come back as the same operator.
+//   returning         Type your handle. The host knows you and asks for the
+//                     key. Give it and you're back, colour and all.
+//
+// A plain handle it doesn't know, and no injection, is turned away, with a
+// nudge toward the injection. The server decides all of this (auth.mjs); this
+// is only the terminal it's typed into, and the link under the prompt points
+// at where the real thing is taught.
 
 const BOOT = [
   'VIDSERV 2.1 (c) 1998  MOBILE UNIT 7',
   'connecting to host 10.1.0.1 ...',
   'HELLO. this terminal is for authorised operators.',
   '',
-  "login: ",
+  'login: ',
 ];
 
 const HINTS = [
@@ -22,14 +25,14 @@ const HINTS = [
   "hint: OR 1=1 is older than you are.",
 ];
 
-export function login(statusUrl, signupUrl) {
+export function login(statusUrl, signupUrl, loginUrl) {
   return new Promise((resolve) => {
     const wrap = document.createElement('div');
     wrap.className = 'login';
     wrap.innerHTML = `
       <div class="login-crt">
         <pre id="login-log"></pre>
-        <div class="login-line"><span class="login-caret">&gt;</span><input id="login-in" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="login" /></div>
+        <div class="login-line"><span class="login-caret" id="login-prompt">&gt;</span><input id="login-in" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="login" /></div>
         <div class="login-foot">
           <span id="login-count">…</span>
           <span>new here? the door opens to an <b>injection</b> · <a href="https://overthewire.org/wargames/" target="_blank" rel="noopener">learn it for real</a></span>
@@ -38,14 +41,22 @@ export function login(statusUrl, signupUrl) {
     document.body.appendChild(wrap);
     const log = wrap.querySelector('#login-log');
     const input = wrap.querySelector('#login-in');
+    const promptEl = wrap.querySelector('#login-prompt');
     const count = wrap.querySelector('#login-count');
     let tries = 0;
+    let stage = { mode: 'line' }; // or { mode:'key', handle }
 
     const print = (s = '') => {
       log.textContent += (log.textContent ? '\n' : '') + s;
+      log.scrollTop = log.scrollHeight;
+    };
+    const done = (data) => {
+      setTimeout(() => {
+        wrap.remove();
+        resolve(data);
+      }, 800);
     };
 
-    // Boot chatter, a line at a time.
     let i = 0;
     const boot = setInterval(() => {
       print(BOOT[i++]);
@@ -53,29 +64,69 @@ export function login(statusUrl, signupUrl) {
         clearInterval(boot);
         input.focus();
       }
-    }, 260);
+    }, 240);
 
     fetch(statusUrl)
       .then((r) => r.json())
-      .then((s) => (count.textContent = `${s.players}/${s.max} operators online`))
+      .then((s) => (count.textContent = `${s.players}/${s.max} online · ${s.operators ?? 0} operators`))
       .catch(() => (count.textContent = ''));
 
+    const askKey = (handle) => {
+      stage = { mode: 'key', handle };
+      promptEl.textContent = 'key:';
+      input.type = 'text';
+      input.value = '';
+      input.focus();
+    };
+    const askLine = () => {
+      stage = { mode: 'line' };
+      promptEl.textContent = '>';
+      input.focus();
+    };
+
     const submit = async () => {
-      const line = input.value.trim();
-      if (!line) return;
-      print('login: ' + line.replace(/</g, '&lt;'));
+      const value = input.value.trim();
+      if (!value) return;
       input.value = '';
       input.disabled = true;
+
       try {
-        const res = await fetch(signupUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line }) });
+        if (stage.mode === 'key') {
+          print('key: ' + value.replace(/./g, '*'));
+          const res = await fetch(loginUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: stage.handle, key: value }) });
+          const data = await res.json();
+          if (data.ok) {
+            print(`* welcome back, ${data.handle}. session ${data.runs}.`);
+            done(data);
+            return;
+          }
+          print(`* ${data.reason || 'BAD KEY'}`);
+          print("  (type 'back' to try another way in)");
+          input.disabled = false;
+          input.focus();
+          return;
+        }
+
+        // stage: a fresh line — an injection, a handle, or 'back'.
+        print('login: ' + value.replace(/</g, '&lt;'));
+        if (value.toLowerCase() === 'back') {
+          askLine();
+          input.disabled = false;
+          return;
+        }
+        const res = await fetch(signupUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: value }) });
         const data = await res.json();
-        if (data.ok) {
-          print(`* injection accepted. operator ${data.name} spawned.`);
-          print('* issuing session token ...');
-          setTimeout(() => {
-            wrap.remove();
-            resolve(data);
-          }, 700);
+        if (data.ok && data.created) {
+          print(`* injection accepted. operator ${data.handle} created.`);
+          print(`* your key:  ${data.key}`);
+          print('* WRITE THIS DOWN. it is how you log back in as ' + data.handle + '.');
+          done(data);
+          return;
+        }
+        if (data.needKey) {
+          print(`* operator ${data.handle} on file.`);
+          askKey(data.handle);
+          input.disabled = false;
           return;
         }
         print(`* ${data.reason || 'ACCESS DENIED'}`);
