@@ -196,14 +196,16 @@ export class RoadGraph {
     for (let i = 0; i < pts.length - 1; i++) widths.push(legW(pts[i], pts[i + 1]));
     const lane = offsetPolyline(pts, widths.map(laneOffset));
 
-    // Pull in to the kerb: a point a car length before the stop, still in
-    // lane, then the stop itself against the kerb.
+    // Pull in to the kerb with a late, sharp hook: hold the driving lane right
+    // up to the spot (so the car passes parked cars instead of drifting through
+    // them), keep an in-lane point abreast of the stop, then cut across to the
+    // kerb. The short lead makes the turn-in happen at the end, not halfway.
     const d = best.dir;
     const [kx, kz] = right(d[0], d[1]);
     const kerb = GE.width / 2 - 1.4;
     const park = [G.p[0] + kx * kerb, G.p[1] + kz * kerb];
     const last = lane[lane.length - 1];
-    const lead = Math.min(9, Math.hypot(last[0] - lane[lane.length - 2][0], last[1] - lane[lane.length - 2][1]) * 0.6);
+    const lead = Math.min(4.5, Math.hypot(last[0] - lane[lane.length - 2][0], last[1] - lane[lane.length - 2][1]) * 0.5);
     lane[lane.length - 1] = [last[0] - d[0] * lead, last[1] - d[1] * lead];
     lane.push(park);
     // Start from where the car actually is; stay inside the world.
