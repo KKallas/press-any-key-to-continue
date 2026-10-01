@@ -105,6 +105,7 @@ try {
 if (!server) server = new LocalServer(LOG);
 
 const world = new World();
+world.overrides = assets; // the player-authored layer, consulted as the world builds
 server.subscribe((e) => e.block === BLOCK, (e) => world.apply(e));
 world.finalize();
 

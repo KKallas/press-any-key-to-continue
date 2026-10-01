@@ -7,7 +7,7 @@ import { createStreet } from '../engine/ground.js';
 import { Rain, LensRain } from '../engine/rain.js';
 import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
-import { inside, buildDecoBlock } from './deco.js';
+import { inside, buildDecoBlock, buildReplacedBuilding } from './deco.js';
 import { collisionMap } from '../engine/collision.js';
 import { greenMap, grassMesh } from '../engine/greens.js';
 import { RoadGraph } from '../engine/roads.js';
@@ -188,7 +188,17 @@ export class World {
           this.doors.push({ plot: p.id, ...d, hx: d.x + d.nx * 1.3, hz: d.z + d.nz * 1.3 });
         }
       }
-      const built = buildDecoBlock(props.plots);
+      // Buildings a player's model has replaced are built on their own, so they
+      // leave the merged block mesh.
+      const skip = new Set();
+      const replaced = [];
+      if (this.overrides) {
+        for (const p of props.plots) {
+          const rec = this.overrides.get(p.id);
+          if (rec && rec.type === 'building') { skip.add(p.id); replaced.push([p, rec]); }
+        }
+      }
+      const built = buildDecoBlock(props.plots, skip);
       built.overlayStart = this.overlaySegments.length;
       this.overlaySegments.push(...built.outline);
       built.overlayCount = built.outline.length;
@@ -196,6 +206,16 @@ export class World {
       // Glow (neon, lit windows' frames) is light, not something you can't see through.
       for (const m of built.object.children) if (m.name !== 'glow') this.solids.push(m);
       this.entities.set(id, { kind, ...built });
+      for (const [p, rec] of replaced) {
+        const rb = buildReplacedBuilding(p, rec);
+        if (!rb) continue;
+        rb.overlayStart = this.overlaySegments.length;
+        this.overlaySegments.push(...rb.outline);
+        rb.overlayCount = rb.outline.length;
+        this.scene.add(rb.object);
+        this.solids.push(rb.object);
+        this.entities.set(`ov:${p.id}`, { kind: 'replaced', ...rb });
+      }
       return;
     }
 

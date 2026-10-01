@@ -653,7 +653,10 @@ function fireEscape(B, r, fp, cen, top) {
 }
 
 // All the buildings of one block, merged: four meshes for the whole block.
-export function buildDecoBlock(plots) {
+export function buildDecoBlock(plots, skip = new Set()) {
+  // Plots in `skip` have a player's override and are built on their own (see
+  // buildReplacedBuilding), so they're left out of the merged block mesh.
+  if (skip.size) plots = plots.filter((p) => !skip.has(p.id));
   const M = decoMaterials();
   const B = { walls: new Builder(), roof: new Builder(), trim: new Builder(), glow: new Builder() };
   const outline = [];
@@ -686,4 +689,82 @@ export function buildDecoBlock(plots) {
     }
   }
   return { object: group, outline };
+}
+
+// A building replaced wholesale by a player's override: the forged facade wraps
+// an extruded prism of the plot's footprint, so it fills the real lot but
+// ignores the procedural massing entirely. The facade image loads async and is
+// dropped onto the material when it arrives. Returns { object, outline }.
+export function buildReplacedBuilding(plot, rec) {
+  let fp = plot.footprint;
+  if (!fp || fp.length < 3) return null;
+  if (signedArea(fp) < 0) fp = [...fp].reverse();
+  const H = Math.max(6, Math.min(120, Number(rec.params?.height) || plot.height || 24));
+
+  const pos = [], nor = [], uv = [], idx = [];
+  let perim = 0;
+  for (let i = 0; i < fp.length; i++) {
+    const a = fp[i], b = fp[(i + 1) % fp.length];
+    perim += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  // Walls: the facade wraps once around the perimeter (U), floor to roof (V).
+  let u = 0;
+  for (let i = 0; i < fp.length; i++) {
+    const a = fp[i], b = fp[(i + 1) % fp.length];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const nx = (b[1] - a[1]) / L, nz = -(b[0] - a[0]) / L; // outward for CCW
+    const u0 = u / perim, u1 = (u + L) / perim;
+    const base = pos.length / 3;
+    pos.push(a[0], 0, a[1], b[0], 0, b[1], b[0], H, b[1], a[0], H, a[1]);
+    for (let k = 0; k < 4; k++) nor.push(nx, 0, nz);
+    uv.push(u0, 0, u1, 0, u1, 1, u0, 1);
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    u += L;
+  }
+  // Flat roof: a fan from the centroid at the top.
+  const c = centroid(fp);
+  const cBase = pos.length / 3;
+  pos.push(c[0], H, c[1]); nor.push(0, 1, 0); uv.push(0.5, 0.5);
+  for (let i = 0; i < fp.length; i++) {
+    const p = fp[i];
+    pos.push(p[0], H, p[1]); nor.push(0, 1, 0); uv.push(0.5, 0.5);
+  }
+  for (let i = 0; i < fp.length; i++) idx.push(cBase, cBase + 1 + i, cBase + 1 + ((i + 1) % fp.length));
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+
+  const glow = rec.params?.glow ? new THREE.Color(rec.params.glow) : null;
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x6a6a6a,
+    roughness: 0.7,
+    metalness: 0.1,
+    emissive: glow ?? new THREE.Color(0, 0, 0),
+    emissiveIntensity: glow ? 0.35 : 0,
+  });
+  if (rec.facade) {
+    new THREE.TextureLoader().load(rec.facade, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      mat.map = tex;
+      mat.color.setScalar(1);
+      mat.emissive = glow ?? new THREE.Color(0.05, 0.06, 0.07);
+      mat.emissiveMap = tex;
+      mat.emissiveIntensity = glow ? 0.5 : 0.25;
+      mat.needsUpdate = true;
+    });
+  }
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.name = 'replaced';
+
+  // Outline along the roof edge, so hover highlights it like any building.
+  const outline = [];
+  for (let i = 0; i < fp.length; i++) {
+    const a = fp[i], b = fp[(i + 1) % fp.length];
+    outline.push({ a: [a[0], H, a[1]], b: [b[0], H, b[1]], alphaA: 0.95, alphaB: 0.95, owner: plot.id });
+  }
+  return { object: mesh, outline };
 }
