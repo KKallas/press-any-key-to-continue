@@ -58,13 +58,21 @@ export class Hud {
     const a = { x: 0, y: 0 };
     const b = { x: 0, y: 0 };
     g.lineWidth = 2 * k;
+    // A building the matrix is bleeding through flickers brighter, and jitters.
+    const flickerPulse = 0.5 + 0.5 * Math.abs(Math.sin(s.now * 9)) * (Math.random() > 0.15 ? 1 : 0.2);
     for (const seg of s.segments) {
-      if (seg.owner !== undefined && seg.owner !== s.hover) continue;
+      const isFlicker = s.flicker !== undefined && seg.owner === s.flicker;
+      if (seg.owner !== undefined && seg.owner !== s.hover && !isFlicker) continue;
       if (!this.toPx(seg.a, s.camera, a) || !this.toPx(seg.b, s.camera, b)) continue;
       if ((a.x < -W * 0.3 && b.x < -W * 0.3) || (a.x > W * 1.3 && b.x > W * 1.3)) continue;
       if ((a.y < -H * 0.3 && b.y < -H * 0.3) || (a.y > H * 1.3 && b.y > H * 1.3)) continue;
       g.setLineDash(seg.dashed ? [7 * k, 6 * k] : []);
-      if (seg.alphaA === seg.alphaB) {
+      if (isFlicker) {
+        g.lineWidth = 3 * k;
+        g.globalAlpha = flickerPulse;
+        g.strokeStyle = '#b6ffc8';
+      } else if (seg.alphaA === seg.alphaB) {
+        g.lineWidth = 2 * k;
         g.globalAlpha = seg.alphaA * WIRE;
         g.strokeStyle = GREEN;
       } else {

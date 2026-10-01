@@ -7,6 +7,7 @@ import { LocalServer } from './net/local-server.js';
 import { NetServer } from './net/net-server.js';
 import { login, resumeSession, clearSession } from './game/login.js';
 import { AssetRegistry } from './game/assets.js';
+import { forgeTerminal } from './game/forge.js';
 import { World } from './world/world.js';
 import { BLOCK_01 } from './world/block01.js';
 import { cityToEvents } from './world/city.js';
@@ -969,7 +970,43 @@ function ghostOutline() {
   return bodyPoints(id).map((p) => tmp.copy(p).applyMatrix4(obj.matrixWorld).toArray());
 }
 
+// The matrix bleed: now and then a building flickers. Click it during the
+// flicker to reach its utility terminal and forge what the building is.
+let flickerPlot = null;
+let flickerUntil = 0;
+let nextFlicker = 8;
+let forgeOpen = false;
+function updateFlicker(time) {
+  if (forgeOpen) { flickerPlot = null; return; }
+  if (flickerPlot && time > flickerUntil) flickerPlot = null;
+  if (!flickerPlot && time > nextFlicker && world.plots.length) {
+    flickerPlot = world.plots[Math.floor(Math.random() * world.plots.length)].id;
+    flickerUntil = time + 5;
+    nextFlicker = time + 12 + Math.random() * 10;
+  }
+}
+function bboxLabel(fp) {
+  let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+  for (const [x, z] of fp) { a = Math.min(a, x); c = Math.max(c, x); b = Math.min(b, z); d = Math.max(d, z); }
+  return `${Math.round(c - a)}x${Math.round(d - b)} m`;
+}
+function openForge(id) {
+  const plot = world.plots.find((p) => p.id === id);
+  const rec = assets.get(id);
+  forgeOpen = true;
+  flickerPlot = null;
+  say('MATRIX BLEED — TERMINAL OPEN', 2);
+  forgeTerminal({
+    id,
+    type: 'building',
+    prompt: rec?.prompt || plot?.prompt || '',
+    constraints: { footprint: bboxLabel(plot?.footprint || [[0, 0]]), 'max-height': 60, facade: '1024x1024 png' },
+    onDone: () => { forgeOpen = false; nextFlicker = (performance.now() - t0) / 1000 + 10; },
+  });
+}
+
 function drawHud(time) {
+  updateFlicker(time);
   const [px, pz] = mode === 'car' ? [car.x, car.z] : [walker.x, walker.z];
   const near = mode === 'car' ? [] : world.doors.filter((d) => Math.hypot(d.hx - px, d.hz - pz) < 45);
   // Booths and parking entrances show on the feed too, so you can find them.
@@ -983,6 +1020,7 @@ function drawHud(time) {
     doors: near,
     route: routeForHud(),
     hover: hoveredBuilding(),
+    flicker: flickerPlot,
     ghost: ghostOutline(),
     contacts: pursuit?.contacts(),
     link: mission?.target && mission.state === 'open'
@@ -1104,6 +1142,12 @@ droneControl.onClick = (cx, cy) => {
   const at = groundAt(cx, cy);
   if (!at) return;
   const building = buildingAt(cx, cy);
+  // A building caught mid-flicker: jack into its utility terminal instead.
+  if (building && building === flickerPlot && !forgeOpen) {
+    if (pendingClick) { clearTimeout(pendingClick.timer); pendingClick = null; }
+    openForge(building);
+    return;
+  }
   if (pendingClick) {
     clearTimeout(pendingClick.timer);
     pendingClick = null;

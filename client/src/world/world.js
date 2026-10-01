@@ -183,7 +183,7 @@ export class World {
     if (kind === 'deco-block') {
       for (const p of props.plots) {
         this.obstacles.push(p.footprint);
-        this.plots.push({ id: p.id, footprint: p.footprint });
+        this.plots.push({ id: p.id, footprint: p.footprint, prompt: p.prompt });
         for (const d of p.doors ?? []) {
           this.doors.push({ plot: p.id, ...d, hx: d.x + d.nx * 1.3, hz: d.z + d.nz * 1.3 });
         }
