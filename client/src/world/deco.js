@@ -701,6 +701,7 @@ export function buildReplacedBuilding(plot, rec) {
   if (signedArea(fp) < 0) fp = [...fp].reverse();
   const H = Math.max(6, Math.min(120, Number(rec.params?.height) || plot.height || 24));
 
+  const cen = centroid(fp);
   const pos = [], nor = [], uv = [], idx = [];
   let perim = 0;
   for (let i = 0; i < fp.length; i++) {
@@ -712,7 +713,11 @@ export function buildReplacedBuilding(plot, rec) {
   for (let i = 0; i < fp.length; i++) {
     const a = fp[i], b = fp[(i + 1) % fp.length];
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    const nx = (b[1] - a[1]) / L, nz = -(b[0] - a[0]) / L; // outward for CCW
+    // Outward normal, decided by the centroid rather than by winding, so a
+    // facade is never inside-out whichever way the footprint runs.
+    let nx = (b[1] - a[1]) / L, nz = -(b[0] - a[0]) / L;
+    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+    if (nx * (mx - cen[0]) + nz * (mz - cen[1]) < 0) { nx = -nx; nz = -nz; }
     const u0 = u / perim, u1 = (u + L) / perim;
     const base = pos.length / 3;
     pos.push(a[0], 0, a[1], b[0], 0, b[1], b[0], H, b[1], a[0], H, a[1]);
@@ -722,9 +727,8 @@ export function buildReplacedBuilding(plot, rec) {
     u += L;
   }
   // Flat roof: a fan from the centroid at the top.
-  const c = centroid(fp);
   const cBase = pos.length / 3;
-  pos.push(c[0], H, c[1]); nor.push(0, 1, 0); uv.push(0.5, 0.5);
+  pos.push(cen[0], H, cen[1]); nor.push(0, 1, 0); uv.push(0.5, 0.5);
   for (let i = 0; i < fp.length; i++) {
     const p = fp[i];
     pos.push(p[0], H, p[1]); nor.push(0, 1, 0); uv.push(0.5, 0.5);
@@ -744,6 +748,12 @@ export function buildReplacedBuilding(plot, rec) {
     metalness: 0.1,
     emissive: glow ?? new THREE.Color(0, 0, 0),
     emissiveIntensity: glow ? 0.35 : 0,
+    // A facade is a solid wall. Render both sides (so a mis-wound face is never
+    // invisible) and treat the texture as opaque with a hard alpha cutout for
+    // any holes, so there's no see-through blending or depth-sort mess.
+    side: THREE.DoubleSide,
+    transparent: false,
+    alphaTest: 0.5,
   });
   if (rec.facade) {
     new THREE.TextureLoader().load(rec.facade, (tex) => {

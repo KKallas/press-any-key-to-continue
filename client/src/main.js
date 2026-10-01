@@ -1030,6 +1030,7 @@ function openForge(id, type = 'building', footprint = null) {
   forgeTerminal({
     id,
     type,
+    footprint: fp,
     prompt: rec?.prompt || plot?.prompt || (type === 'road' ? 'a short service road, wet asphalt under sodium light; set params.color.' : describeBuilding(id, plot)),
     constraints: type === 'road'
       ? { note: 'a road stub; use params.color for the asphalt', width: 12, facade: 'none' }
