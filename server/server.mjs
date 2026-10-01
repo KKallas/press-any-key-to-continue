@@ -24,6 +24,7 @@ import { exec } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { parseSignup, parseLogin } from './auth.mjs';
 import { OperatorDB } from './db.mjs';
+import { OverrideStore } from './overrides.mjs';
 
 // The admin booth: codes anyone can dial in-game. Only these fixed codes run —
 // never arbitrary input — so it's a control panel, not a shell. Pulling the
@@ -46,6 +47,7 @@ const IDLE_MS = 15000; // drop a player we haven't heard from in this long
 
 // The accounts that persist between sessions.
 const db = new OperatorDB();
+const overrides = new OverrideStore(path.join(HERE, 'data', 'overrides'));
 // pending: token -> { name, color } minted at sign-up / login, claimed by the
 // socket that connects with it, then spent.
 const pending = new Map();
@@ -152,8 +154,41 @@ const httpServer = http.createServer((req, res) => {
   if (u.pathname === '/api/status') {
     return end(res, 200, JSON.stringify({ players: players.size, max: MAX_PLAYERS, operators: db.size }), 'application/json');
   }
+  // The override layer: the index every client loads at startup, the files it
+  // serves, and the door a forged bundle comes back through.
+  if (u.pathname === '/api/overrides' && req.method === 'GET') {
+    return end(res, 200, JSON.stringify(overrides.all()), 'application/json');
+  }
+  if (u.pathname === '/api/overrides' && req.method === 'POST') {
+    return readBuffer(req, res, (buf) => {
+      const r = overrides.ingest(buf);
+      end(res, r.ok ? 200 : 400, JSON.stringify(r), 'application/json');
+    });
+  }
+  if (u.pathname.startsWith('/overrides/')) {
+    const file = overrides.resolve(u.pathname);
+    if (!file) return end(res, 404, 'not found');
+    return fs.readFile(file, (err, data) => {
+      if (err) return end(res, 404, 'not found');
+      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+      res.end(data);
+    });
+  }
   serveStatic(req, res);
 });
+
+// Read a binary request body (a forged bundle) up to a cap.
+function readBuffer(req, res, cb) {
+  const chunks = [];
+  let n = 0;
+  req.on('data', (c) => {
+    n += c.length;
+    if (n > 8 * 1024 * 1024) { req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on('end', () => cb(Buffer.concat(chunks)));
+  req.on('error', () => cb(Buffer.alloc(0)));
+}
 
 // ---- The live world over WebSocket ------------------------------------------
 

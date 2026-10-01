@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { LocalServer } from './net/local-server.js';
 import { NetServer } from './net/net-server.js';
 import { login, resumeSession, clearSession } from './game/login.js';
+import { AssetRegistry } from './game/assets.js';
 import { World } from './world/world.js';
 import { BLOCK_01 } from './world/block01.js';
 import { cityToEvents } from './world/city.js';
@@ -62,6 +63,11 @@ async function loadWorld() {
   }
 }
 const { block: BLOCK, events: LOG } = await loadWorld();
+
+// The override layer: what players' models have forged over the base city.
+// Loaded once here so the world build can apply it; empty when there's no
+// server (solo or a static host), leaving the city all-base.
+const assets = await AssetRegistry.load('/api/overrides');
 
 // Server and world. Try the shared world (a running game server on this
 // origin); fall back to solo play if there's none, or if the address says
@@ -1328,4 +1334,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { net, mission, pursuit, inventory, access, places, MINIGAMES, logout: () => { clearSession(); location.reload(); }, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { net, mission, pursuit, inventory, access, places, assets, MINIGAMES, logout: () => { clearSession(); location.reload(); }, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
