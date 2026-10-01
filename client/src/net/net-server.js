@@ -19,12 +19,13 @@ const SEND_HZ = 15; // how often we tell the server where we are
 export class NetServer extends LocalServer {
   // block: the block remote players live in (the same city as you).
   // me: { car: 'car1', skin: 'skin' } — the ids of your own body.
-  constructor({ log = [], block, token, me, onRoster } = {}) {
+  constructor({ log = [], block, token, me, onRoster, onNotice } = {}) {
     super(log);
     this.block = block;
     this.token = token;
     this.me = me;
     this.onRoster = onRoster;
+    this.onNotice = onNotice; // server broadcasts and dial replies, as text lines
     this.ws = null;
     this.connected = false;
     this.roster = new Map(); // id -> { name, color }
@@ -92,6 +93,8 @@ export class NetServer extends LocalServer {
           this.applyWorld(m.players);
         } else if (m.t === 'left') {
           this.dropRemote(m.id);
+        } else if (m.t === 'notice' || m.t === 'dial') {
+          this.onNotice?.(m.msg || '', m);
         }
       });
       this.ws.addEventListener('close', () => {
@@ -127,6 +130,15 @@ export class NetServer extends LocalServer {
         visible: this.mine.visible,
       }),
     );
+  }
+
+  // Dial a code at the admin booth (e.g. '#99' to rebuild the world). The
+  // server decides what each code does; here we just send it. Returns false if
+  // there's no live connection (solo play).
+  dial(code) {
+    if (!this.connected || !this.ws || this.ws.readyState !== 1) return false;
+    this.ws.send(JSON.stringify({ t: 'dial', code: String(code) }));
+    return true;
   }
 
   // A snapshot of everyone else. Each entry: [id, mode, x, z, heading, speed].

@@ -82,6 +82,8 @@ try {
         const el = document.getElementById('online');
         if (el) el.textContent = `${roster.size} ONLINE`;
       },
+      // Server broadcasts and dial replies — e.g. someone rebuilding the world.
+      onNotice: (msg) => { if (msg) say(msg, 4); },
     });
     const ok = await net.connect();
     if (ok) {
@@ -427,8 +429,47 @@ async function hackSystem() {
 }
 
 function jackBooth(b) {
+  if (b.admin) { dialPad(); return; } // the admin line: dial, don't jack a modem in
   booth = { id: b.id, x: b.x, z: b.z, start: performance.now() / 1000 };
   say('ONLINE — WATCH THE STREET', 2.5);
+}
+
+// The admin line. A keypad over the feed: dial a code and the server acts on
+// it. #99 rebuilds the world. Anyone can use it — that's part of the game.
+function dialPad() {
+  if (document.querySelector('.dialpad')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'mg dialpad';
+  wrap.innerHTML = `
+    <div class="mg-box">
+      <div class="mg-head"><span>ADMIN LINE</span><span class="mg-sub">booth #99</span></div>
+      <div class="mg-body">
+        <div class="mg-line">DIAL A CODE, THEN CALL.</div>
+        <div class="mg-line">#99 — REBUILD THE WORLD FROM GITHUB.</div>
+        <input class="dial-in" autocomplete="off" spellcheck="false" aria-label="dial" value="#99" />
+      </div>
+      <div class="mg-foot" id="dial-msg"></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const input = wrap.querySelector('.dial-in');
+  input.style.cssText = 'background:transparent;border:1px solid rgba(125,255,154,0.5);color:#7dff9a;font:28px "VT323","Courier New",monospace;text-align:center;letter-spacing:0.35em;padding:6px 10px;width:170px;outline:none;text-shadow:inherit;';
+  const msg = wrap.querySelector('#dial-msg');
+  const close = () => wrap.remove();
+  input.focus();
+  input.select();
+  const call = () => {
+    const code = input.value.trim();
+    if (!code) return;
+    if (!net) { msg.textContent = 'DEAD LINE — NO SERVER (SOLO)'; return; }
+    const ok = net.dial(code);
+    msg.textContent = ok ? `CALLING ${code}…` : 'DEAD LINE';
+    if (ok) setTimeout(close, 900);
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') call();
+    else if (e.key === 'Escape') close();
+  });
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
 }
 function endBooth(interfered = false) {
   booth = null;
@@ -503,7 +544,8 @@ function buildActions() {
   }
   // On foot.
   const b = nearestBooth();
-  if (b) A.push({ label: 'JACK IN · BOOTH', run: () => jackBooth(b), need: 'modem', disabled: !inventory.has('modem'), note: 'need a modem' });
+  if (b?.admin) A.push({ label: 'DIAL · ADMIN LINE', run: dialPad });
+  else if (b) A.push({ label: 'JACK IN · BOOTH', run: () => jackBooth(b), need: 'modem', disabled: !inventory.has('modem'), note: 'need a modem' });
   const door = nearestDoor();
   if (door) {
     const k = kindOf(door.plot);
@@ -534,7 +576,7 @@ function placeTitle() {
   if (mode === 'inside') return cafe ? 'INTERNET CAFÉ' : `${kindOf(insideDoor.plot).toUpperCase()} · ${insideDoor.plot.toUpperCase()}`;
   if (mode === 'car') return parked ? 'PARKED' : parkingInReach() ? 'ENTRANCE' : 'CAR-1';
   const d = nearestBooth();
-  if (d) return 'PHONE BOOTH';
+  if (d) return d.admin ? 'ADMIN LINE' : 'PHONE BOOTH';
   const door = nearestDoor();
   if (door) return `${kindOf(door.plot).toUpperCase()} · ${door.plot.toUpperCase()}`;
   return 'ON FOOT';
@@ -1131,6 +1173,7 @@ function game(dt, time) {
       dest: currentDest(),
       pursuers: pursuit?.contacts(),
       players: net?.contacts(),
+      adminBooth: world.adminBooth,
       heat: pursuit?.heat ?? 0,
       heatLabel: pursuit?.label(),
     });

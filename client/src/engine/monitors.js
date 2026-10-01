@@ -164,6 +164,20 @@ export class MapScreen {
       g.stroke();
     }
 
+    // The admin booth: a blinking box with its code, so you can find the line
+    // that rebuilds the world.
+    if (state.adminBooth) {
+      const [ax, ay] = P(state.adminBooth.x, state.adminBooth.z);
+      const r = Math.max(3.5, H * 0.026);
+      g.strokeStyle = blink ? 'rgba(120,255,170,1)' : 'rgba(120,255,170,0.45)';
+      g.lineWidth = 1.5;
+      g.strokeRect(ax - r, ay - r, r * 2, r * 2);
+      g.fillStyle = g.strokeStyle;
+      g.textAlign = 'center';
+      g.fillText('#99', ax, ay + r + 1);
+      g.textAlign = 'left';
+    }
+
     // The car: a heading tick; the skin on foot: a dot.
     const [cx, cy] = P(state.car[0], state.car[1]);
     g.fillStyle = rgba(1);

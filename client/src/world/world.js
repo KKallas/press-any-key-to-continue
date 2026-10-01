@@ -216,7 +216,11 @@ export class World {
     if (kind === 'lamp' || kind === 'traffic-light') this.posts.push({ x: props.x, z: props.z, r: 0.2 });
     if (kind === 'phone-booth') {
       this.posts.push({ x: props.x, z: props.z, r: 0.6 });
-      this.booths.push({ id, x: props.x, z: props.z });
+      // One booth is the admin line: dial #99 there to rebuild the world.
+      const admin = id === 'booth1';
+      const b = { id, x: props.x, z: props.z, admin };
+      this.booths.push(b);
+      if (admin) this.adminBooth = b;
       this.posts[this.posts.length - 1].booth = true;
     }
     if (kind === 'terminal') this.posts.push({ x: props.x, z: props.z, r: 0.6 });

@@ -20,9 +20,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 import crypto from 'node:crypto';
+import { exec } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { parseSignup, parseLogin } from './auth.mjs';
 import { OperatorDB } from './db.mjs';
+
+// The admin booth: codes anyone can dial in-game. Only these fixed codes run —
+// never arbitrary input — so it's a control panel, not a shell. Pulling the
+// world is part of the game: anyone who finds the booth can rebuild it.
+// `systemd-run` detaches the job so it survives the very restart it triggers.
+const DIAL_CODES = {
+  '#99': {
+    what: 'REBUILD WORLD — PULLING FROM GITHUB',
+    run: 'systemd-run --quiet --collect /usr/local/bin/pak-update --force',
+  },
+};
+let lastDial = 0; // a crude cooldown so the world can't be spammed into a restart loop
 
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const CLIENT = path.join(HERE, '..', 'client');
@@ -188,6 +201,23 @@ wss.on('connection', (ws, req) => {
       player.heading = +m.heading || 0;
       player.speed = +m.speed || 0;
       player.visible = m.visible !== false;
+    } else if (m.t === 'dial') {
+      const cmd = DIAL_CODES[String(m.code || '').trim()];
+      if (!cmd) {
+        ws.send(JSON.stringify({ t: 'dial', ok: false, msg: `NO SUCH LINE: ${String(m.code || '').slice(0, 8)}` }));
+        return;
+      }
+      const now = Date.now();
+      if (now - lastDial < 20000) {
+        ws.send(JSON.stringify({ t: 'dial', ok: false, msg: 'LINE BUSY — TRY AGAIN SHORTLY' }));
+        return;
+      }
+      lastDial = now;
+      ws.send(JSON.stringify({ t: 'dial', ok: true, msg: `${cmd.what}…` }));
+      broadcast({ t: 'notice', msg: `${player.name} DIALED ${m.code} · ${cmd.what}` });
+      exec(cmd.run, { timeout: 180000 }, (err) => {
+        if (err) broadcast({ t: 'notice', msg: `DIAL ${m.code} FAILED: ${String(err.message || err).slice(0, 80)}` });
+      });
     }
   });
 
