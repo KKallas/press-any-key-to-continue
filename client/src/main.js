@@ -320,7 +320,12 @@ function use() {
       walker.route = null;
       car.occupied = true;
       mode = 'car';
-      if (carStashed) { const e = world.entities.get('car1'); if (e?.object) e.object.visible = true; carStashed = false; }
+      if (parked?.garage) { // back in the garaged car: bring it up
+        parked = null;
+        car.hidden = false;
+        const e = world.entities.get('car1');
+        if (e?.object) e.object.visible = true;
+      }
       server.append({ block: BLOCK, type: 'move', transient: true, id: 'skin', props: { x: car.x, z: car.z, visible: false } });
     }
   } else if (mode === 'inside') {
@@ -595,7 +600,12 @@ function buildActions() {
   }
   if (mode === 'car') {
     if (parked) {
-      A.push({ label: 'PULL OUT', run: pullOut });
+      if (parked.garage) {
+        A.push({ label: parked.door ? `ON FOOT → ${parked.door.plot.toUpperCase()}` : 'ON FOOT', run: garageOnFoot });
+        A.push({ label: 'DRIVE OUT', run: garageDriveOut });
+      } else {
+        A.push({ label: 'PULL OUT', run: pullOut });
+      }
       return A;
     }
     const e = parkingInReach();
@@ -651,7 +661,7 @@ function placeTitle() {
   if (busy) return 'WORKING';
   if (booth) return 'PHONE BOOTH';
   if (mode === 'inside') return cafe ? 'INTERNET CAFÉ' : `${kindOf(insideDoor.plot).toUpperCase()} · ${insideDoor.plot.toUpperCase()}`;
-  if (mode === 'car') return parked ? 'PARKED' : parkingInReach() ? 'ENTRANCE' : 'CAR-1';
+  if (mode === 'car') return parked ? (parked.garage ? 'PARKING GARAGE' : 'PARKED') : parkingInReach() ? 'ENTRANCE' : 'CAR-1';
   if (nearestParkedCar()) return 'PARKED CAR';
   const d = nearestBooth();
   if (d) return d.admin ? 'ADMIN LINE' : 'PHONE BOOTH';
@@ -1112,21 +1122,54 @@ function garageFor(door) {
   }
   return best;
 }
-// Arrived at the garage (or kerb): stash the car, get out, walk to the door.
-let carStashed = false;
-function parkAndWalk(door, garage) {
+// Drove into a garage: the car goes down the ramp and out of sight, and you get
+// an action list — go on foot to the building, or drive back out. Clicking the
+// map anywhere also drives you out (handled in waypoint).
+function parkInGarage(door, garage) {
+  parked = { garage, door };
+  car.occupied = false;
+  car.speed = 0;
+  autopilot.cancel();
+  car.place(garage.x, garage.z, car.heading);
+  car.hidden = true;
+  const e = world.entities.get('car1');
+  if (e?.object) e.object.visible = false;
+  server.append({ block: BLOCK, type: 'move', transient: true, id: 'car1', props: { x: garage.x, z: garage.z, visible: false } });
+  say(`PARKED · ${garage.id.toUpperCase().replace('-', ' ')}`, 2.5);
+}
+// From the garage, out on foot and off to the building you came for.
+function garageOnFoot() {
+  const door = parked?.door;
+  const g = parked?.garage;
+  if (!walker.place(g.x + 2, g.z + 2)) walker.place(g.x, g.z, false);
+  walker.active = true;
+  mode = 'foot';
+  say('ON FOOT', 1.5);
+  if (door) {
+    const pts = footNav.findPath([walker.x, walker.z], [door.hx, door.hz], { offRoad: 1 });
+    if (pts) walker.follow(pts, false, primaryAction);
+  }
+}
+// Bring the car up and drive off.
+function garageDriveOut() {
+  if (!parked?.garage) return;
+  parked = null;
+  car.hidden = false;
+  car.occupied = true;
+  mode = 'car';
+  const e = world.entities.get('car1');
+  if (e?.object) e.object.visible = true;
+  server.append({ block: BLOCK, type: 'move', transient: true, id: 'car1', props: { x: car.x, z: car.z, visible: true } });
+}
+// Street parking (no garage near): get out at the kerb and walk the rest.
+function streetParkAndWalk(door) {
   const side = car.heading + Math.PI / 2;
   if (!walker.place(car.x + Math.cos(side) * 2.2, car.z - Math.sin(side) * 2.2)) walker.place(car.x, car.z, false);
   car.occupied = false;
   autopilot.cancel();
   walker.active = true;
   mode = 'foot';
-  if (garage) {
-    const e = world.entities.get('car1');
-    if (e?.object) e.object.visible = false; // down the ramp, out of sight
-    carStashed = true;
-  }
-  say(garage ? `PARKED · ${garage.id.toUpperCase().replace('-', ' ')} — ON FOOT` : 'PARKED AT THE KERB — ON FOOT', 2.5);
+  say('PARKED AT THE KERB — ON FOOT', 2.5);
   const pts = footNav.findPath([walker.x, walker.z], [door.hx, door.hz], { offRoad: 1 });
   if (pts) walker.follow(pts, false, primaryAction);
 }
@@ -1154,6 +1197,8 @@ let pendingCarAction = null;
 function waypoint([x, z], fast, building = null, booth = null) {
   if (mode === 'car') {
     pendingCarAction = null;
+    // Parked in a garage? Any click to go somewhere drives you back out first.
+    if (parked?.garage) garageDriveOut();
     // Driving to a building: park in its nearest underground garage (or at the
     // kerb, if none is close) and walk the rest.
     if (building) {
@@ -1161,7 +1206,7 @@ function waypoint([x, z], fast, building = null, booth = null) {
       if (!door) { say('NO WAY IN'); return; }
       const garage = garageFor(door);
       const at = garage ? [garage.x, garage.z] : [door.hx, door.hz];
-      const run = () => parkAndWalk(door, garage);
+      const run = () => (garage ? parkInGarage(door, garage) : streetParkAndWalk(door));
       if (Math.hypot(car.x - at[0], car.z - at[1]) < 7 && Math.abs(car.speed) < 3) return run();
       if (!autopilot.go(at, fast ? 'stunt' : 'normal')) return say('NO ROUTE');
       autopilot.route.label = garage ? `TO ${garage.id.toUpperCase().replace('-', ' ')}` : `TO ${building.toUpperCase()}`;
