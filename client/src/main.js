@@ -1155,6 +1155,16 @@ let fpsFrames = 0;
 
 // Each camera records at its own frame rate. The world only moves when the
 // active camera takes a frame, and the GPU rests in between.
+// The boot cover (opaque from first paint) lifts once there's a real frame
+// behind it, so the rack is never seen half-built.
+let revealed = false;
+function reveal() {
+  if (revealed) return;
+  revealed = true;
+  const b = document.getElementById('boot');
+  if (b) { b.classList.add('gone'); setTimeout(() => b.remove(), 700); }
+}
+
 function frame(now) {
   const dt = Math.min(now - last, 100);
   last = now;
@@ -1202,6 +1212,7 @@ function frame(now) {
     world.update(shot, renderer.domElement.height);
     if (world.lensRain) world.lensRain.update(shot, active.camera, renderer.domElement.height);
     pipeline.render(shot, n);
+    reveal();
   }
   osd(time);
 
