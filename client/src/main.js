@@ -208,7 +208,7 @@ if (roads) {
   );
 }
 const kindOf = (plot) => places.kindOf.get(plot) ?? 'plain';
-const inventory = new Inventory(['laptop', 'modem']);
+const inventory = new Inventory(['laptop', 'modem', 'lockpicks', 'ruler']);
 const access = new Map(); // plot -> { physical, system, hacked }
 const accessOf = (plot) => access.get(plot) ?? { physical: false, system: false, hacked: false };
 const actScreen = new ActionScreen($('aux1'));
@@ -234,6 +234,20 @@ function nearestBooth() {
     if (d < bd) {
       bd = d;
       best = b;
+    }
+  }
+  return best;
+}
+const REACH_PARKEDCAR = 4.5;
+function nearestParkedCar() {
+  let best = null;
+  let bd = REACH_PARKEDCAR;
+  for (const c of world.parkedCars) {
+    if (c.taken) continue;
+    const d = Math.hypot(c.x - walker.x, c.z - walker.z);
+    if (d < bd) {
+      bd = d;
+      best = c;
     }
   }
   return best;
@@ -396,6 +410,36 @@ async function runGame(kind, diff) {
   return ok;
 }
 
+// Break into a parked car: picks run the lockpick, the slim jim runs its own
+// game. Succeed and the door's open; then GET IN takes it.
+async function breakIn(pc, tool) {
+  const ok = await runGame(tool === 'ruler' ? 'slimjim' : 'lockpick', 0.15);
+  if (ok) {
+    pc.broken = true;
+    say("DOOR'S OPEN — GET IN", 2.5);
+  } else {
+    say(tool === 'ruler' ? "IT WON'T CATCH" : 'PICK SNAPPED', 2);
+    if (pursuit) pursuit.heat = Math.min(1, pursuit.heat + 0.15); // the fumbling draws eyes
+  }
+}
+
+// Take a broken-into car: it's gone from the kerb and your car is now sitting
+// where it stood, hotwired and yours to drive.
+function takeCar(pc) {
+  pc.taken = true;
+  server.append({ block: BLOCK, type: 'despawn', id: pc.id });
+  car.x = pc.x;
+  car.z = pc.z;
+  car.heading = pc.heading;
+  car.speed = 0;
+  car.occupied = true;
+  autopilot.cancel();
+  walker.active = false;
+  walker.route = null;
+  mode = 'car';
+  say('HOTWIRED — DRIVE', 2);
+}
+
 async function forceEntry(door) {
   const ok = await runGame('lockpick', 0.15);
   if (ok) {
@@ -546,6 +590,17 @@ function buildActions() {
   const b = nearestBooth();
   if (b?.admin) A.push({ label: 'DIAL · ADMIN LINE', run: dialPad });
   else if (b) A.push({ label: 'JACK IN · BOOTH', run: () => jackBooth(b), need: 'modem', disabled: !inventory.has('modem'), note: 'need a modem' });
+  const pc = nearestParkedCar();
+  if (pc) {
+    if (pc.broken) A.push({ label: 'GET IN', run: () => takeCar(pc) });
+    else {
+      const picks = inventory.has('lockpicks');
+      const ruler = inventory.has('ruler');
+      if (picks) A.push({ label: 'PICK THE LOCK', run: () => breakIn(pc, 'lockpicks') });
+      if (ruler) A.push({ label: 'SLIM JIM THE DOOR', run: () => breakIn(pc, 'ruler') });
+      if (!picks && !ruler) A.push({ label: 'BREAK IN', disabled: true, note: 'need lockpicks or a slim jim' });
+    }
+  }
   const door = nearestDoor();
   if (door) {
     const k = kindOf(door.plot);
@@ -575,6 +630,7 @@ function placeTitle() {
   if (booth) return 'PHONE BOOTH';
   if (mode === 'inside') return cafe ? 'INTERNET CAFÉ' : `${kindOf(insideDoor.plot).toUpperCase()} · ${insideDoor.plot.toUpperCase()}`;
   if (mode === 'car') return parked ? 'PARKED' : parkingInReach() ? 'ENTRANCE' : 'CAR-1';
+  if (nearestParkedCar()) return 'PARKED CAR';
   const d = nearestBooth();
   if (d) return d.admin ? 'ADMIN LINE' : 'PHONE BOOTH';
   const door = nearestDoor();

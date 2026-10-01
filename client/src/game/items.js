@@ -25,6 +25,12 @@ export const ITEMS = {
     note: 'for a door with a lock and no one behind it',
     glyph: 'pick',
   },
+  ruler: {
+    id: 'ruler',
+    name: 'SLIM JIM',
+    note: 'a long steel ruler; down the window to catch a car door',
+    glyph: 'ruler',
+  },
 };
 
 export class Inventory {

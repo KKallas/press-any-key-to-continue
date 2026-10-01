@@ -406,6 +406,11 @@ export class InventoryScreen extends SmallCRT {
       g.lineTo(cx + r, cy - r);
       g.moveTo(cx + r * 0.4, cy - r);
       g.lineTo(cx + r, cy - r);
+    } else if (kind === 'ruler') {
+      // a long slim bar with a little hook at the foot
+      g.moveTo(cx - r * 0.5, cy - r);
+      g.lineTo(cx - r * 0.5, cy + r);
+      g.lineTo(cx + r * 0.3, cy + r);
     } else {
       g.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
     }

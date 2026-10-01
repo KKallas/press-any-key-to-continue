@@ -86,6 +86,44 @@ function placeBooths(city, count) {
   }));
 }
 
+// Parked cars along the kerb: break-in targets. In the parking lane of the
+// wider streets, mid-block (clear of the junctions), spaced apart, facing the
+// way traffic runs on their side.
+function placeParkedCars(city, count) {
+  const cars = [];
+  const colors = ['#4a4f57', '#6f2a2a', '#28406a', '#5f5f33', '#333638', '#7d828c', '#3b4a3b'];
+  let n = 0;
+  for (const road of city.roads) {
+    if (road.width < 12) continue; // needs a parking lane
+    const pts = road.points;
+    for (let i = 0; i < pts.length - 1 && cars.length < count; i++) {
+      const [x0, z0] = pts[i];
+      const [x1, z1] = pts[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 36) continue; // long enough to have a clear mid-block stretch
+      const ux = (x1 - x0) / L;
+      const uz = (z1 - z0) / L;
+      const nx = -uz;
+      const nz = ux;
+      const off = road.width / 2 - 1.8; // in the parking lane, against the kerb
+      const base = Math.atan2(-uz, ux);
+      for (const s of [-1, 1]) {
+        if (cars.length >= count) break;
+        const d = L * (0.32 + 0.36 * ((i + n) % 2)); // mid-block, away from the ends
+        const x = x0 + ux * d + nx * off * s;
+        const z = z0 + uz * d + nz * off * s;
+        n++;
+        if (cars.some((c) => Math.hypot(c.x - x, c.z - z) < 12)) continue;
+        cars.push({ x, z, heading: s > 0 ? base : base + Math.PI });
+      }
+    }
+  }
+  return cars.map((c, i) => ({
+    t: 0, block: B, type: 'spawn', kind: 'car', id: `parked${i + 1}`,
+    props: { x: c.x, z: c.z, heading: c.heading, color: colors[i % colors.length], lights: false, parked: true },
+  }));
+}
+
 // Where the car starts: the middle of the biggest road.
 function startPoint(city) {
   const road = [...city.roads].sort((a, b) => b.width - a.width || b.points.length - a.points.length)[0];
@@ -117,6 +155,7 @@ export function cityToEvents(city) {
   }
   events.push(...placeLamps(city, 40, 6, start));
   events.push(...placeBooths(city, 14));
+  events.push(...placeParkedCars(city, 18));
   events.push({ t: 0, block: B, type: 'spawn', kind: 'car', id: 'car1',
     props: { x: start.x, z: start.z, heading: start.heading, color: '#b3121a', lights: true } });
   events.push({ t: 0, block: B, type: 'spawn', kind: 'drone', id: 'UAV-2',

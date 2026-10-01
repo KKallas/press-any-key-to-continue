@@ -68,6 +68,7 @@ export class World {
     this.posts = [];
     this.doors = [];
     this.booths = [];
+    this.parkedCars = []; // roadside cars you can break into
     // What a line of sight can hit: building meshes, and each building's
     // footprint to tell which one was hit.
     this.solids = [];
@@ -214,6 +215,11 @@ export class World {
       this.solids.push(built.object);
     }
     if (kind === 'lamp' || kind === 'traffic-light') this.posts.push({ x: props.x, z: props.z, r: 0.2 });
+    if (kind === 'car' && props.parked) {
+      this.parkedCars.push({ id, x: props.x, z: props.z, heading: props.heading, broken: false });
+      // Solid to someone on foot, but not to a car, so it never wedges a drive.
+      this.posts.push({ x: props.x, z: props.z, r: 1.2, parkedCar: true });
+    }
     if (kind === 'phone-booth') {
       this.posts.push({ x: props.x, z: props.z, r: 0.6 });
       // One booth is the admin line: dial #99 there to rebuild the world.
@@ -279,7 +285,7 @@ export class World {
     }
     // Booths are solid to a person but not to a car (a car never needs to sit
     // in one), so they stay out of the car's collision to avoid wedging it.
-    const carPosts = this.posts.filter((p) => !p.booth);
+    const carPosts = this.posts.filter((p) => !p.booth && !p.parkedCar);
     this.carFree = collisionMap(b, this.obstacles, carPosts, 1.1, 2);
     this.footFree = collisionMap(b, this.obstacles, this.posts, 0.3, 4);
   }
