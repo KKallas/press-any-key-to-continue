@@ -14,7 +14,7 @@ APP_DIR=/opt/press-any-key
 echo ">>> packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git curl debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y git curl
 
 echo ">>> node 20 LTS"
 if ! command -v node >/dev/null; then
@@ -80,17 +80,38 @@ systemctl daemon-reload
 systemctl enable --now pak-update.timer
 
 echo ">>> caddy (automatic https)"
+# Caddy's apt repo ships an expired signing key, so install the official
+# static binary directly instead.
 if ! command -v caddy >/dev/null; then
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
-  apt-get update -y
-  apt-get install -y caddy
+  curl -fsSL -o /usr/bin/caddy "https://caddyserver.com/api/download?os=linux&arch=amd64"
+  chmod +x /usr/bin/caddy
 fi
+id caddy >/dev/null 2>&1 || useradd --system --home /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
+mkdir -p /etc/caddy
 cat >/etc/caddy/Caddyfile <<CADDY
 $DOMAIN {
     reverse_proxy localhost:8000
 }
 CADDY
+chown -R caddy:caddy /etc/caddy /var/lib/caddy
+cat >/etc/systemd/system/caddy.service <<UNIT
+[Unit]
+Description=Caddy
+After=network.target
+
+[Service]
+User=caddy
+Group=caddy
+ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile
+Restart=on-failure
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now caddy
 systemctl restart caddy
 
 echo ">>> done"
