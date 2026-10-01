@@ -119,11 +119,16 @@ export function login(statusUrl, signupUrl, loginUrl) {
       input.focus();
     };
 
+    // Guard re-entry while a request is in flight WITHOUT disabling the input —
+    // disabling and re-enabling in the same tick loses the caret, which is why
+    // the key prompt used to need a click before you could type.
+    let submitting = false;
     const submit = async () => {
+      if (submitting) return;
       const value = input.value.trim();
       if (!value) return;
       input.value = '';
-      input.disabled = true;
+      submitting = true;
 
       try {
         if (stage.mode === 'key') {
@@ -138,8 +143,6 @@ export function login(statusUrl, signupUrl, loginUrl) {
           }
           print(`* ${data.reason || 'BAD KEY'}`);
           print("  (type 'back' to try another way in)");
-          input.disabled = false;
-          input.focus();
           return;
         }
 
@@ -147,7 +150,6 @@ export function login(statusUrl, signupUrl, loginUrl) {
         print('login: ' + value.replace(/</g, '&lt;'));
         if (value.toLowerCase() === 'back') {
           askLine();
-          input.disabled = false;
           return;
         }
         const res = await fetch(signupUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: value }) });
@@ -164,16 +166,16 @@ export function login(statusUrl, signupUrl, loginUrl) {
         if (data.needKey) {
           print(`* operator ${data.handle} on file.`);
           askKey(data.handle);
-          input.disabled = false;
           return;
         }
         print(`* ${data.reason || 'ACCESS DENIED'}`);
         if (++tries >= 2) print(HINTS[Math.min(tries - 2, HINTS.length - 1)]);
       } catch (e) {
         print('* host unreachable.');
+      } finally {
+        submitting = false;
+        input.focus(); // keep the caret in the box through every stage
       }
-      input.disabled = false;
-      input.focus();
     };
 
     input.addEventListener('keydown', (e) => {
