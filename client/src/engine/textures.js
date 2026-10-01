@@ -230,6 +230,18 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
   // street) meet — get pedestrian markings. A bend in a road doesn't.
   const crossings = junctions.filter((j) => j.degree >= 3);
   const clearRadius = (j) => Math.max(...j.arms.map((a) => a.width)) / 2 + 3;
+  // A road split into collinear segments shows up as several arms pointing the
+  // same way, which used to stack crossings on top of each other in the middle
+  // of the junction. Keep one arm per direction (the widest), and drop stubs.
+  const mainArms = (j) => {
+    const kept = [];
+    for (const a of [...j.arms].sort((p, q) => q.width - p.width)) {
+      if (a.len < 10) continue; // a stub is not a street to stripe across
+      if (kept.some((k) => k.dx * a.dx + k.dz * a.dz > 0.9)) continue; // ~within 25°
+      kept.push(a);
+    }
+    return kept;
+  };
 
   // Wipe the centre and edge lines out of the intersection itself, so they
   // don't run through the crossing. (Black is "no paint" in this map.)
@@ -312,9 +324,15 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
 
   // Junctions: a zebra crossing across each arm, and a stop line behind it.
   for (const j of crossings) {
-    const R = clearRadius(j);
-    for (const arm of j.arms) {
-      const back = R + 1.2;
+    const arms = mainArms(j);
+    for (const arm of arms) {
+      // Sit exactly at the mouth: just past the widest road that crosses this
+      // arm, so the stripes clear the intersection without drifting into it or
+      // out mid-block. Skip an arm too short to hold one.
+      const others = arms.filter((a) => a !== arm);
+      const need = (others.length ? Math.max(...others.map((a) => a.width / 2)) : arm.width / 2) + 1.6;
+      if (arm.len < need + 3) continue;
+      const back = need;
       const cx = j.x + arm.dx * back;
       const cz = j.z + arm.dz * back;
       const nx = -arm.dz;
