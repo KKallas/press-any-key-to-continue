@@ -8,6 +8,7 @@ import { Rain, LensRain } from '../engine/rain.js';
 import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 import { inside, buildDecoBlock, buildReplacedBuilding } from './deco.js';
+import { ghostSites, ghostBuildingMesh, ghostRoadMesh, forgedRoadMesh } from './ghosts.js';
 import { collisionMap } from '../engine/collision.js';
 import { greenMap, grassMesh } from '../engine/greens.js';
 import { RoadGraph } from '../engine/roads.js';
@@ -279,8 +280,71 @@ export class World {
   }
 
   // Once every spawn has arrived: what stops a car, and what stops a person.
+  // The frontier: ghost lots and road stubs at the edge. A forged one is built
+  // for real (and made solid); the rest shimmer, there and then not, waiting to
+  // be caught and forged. Runs before the collision maps so forged ghosts are
+  // solid. See ghosts.js.
+  buildGhosts() {
+    this.ghosts = [];
+    if (!this.bounds) return;
+    for (const s of ghostSites(this.bounds, 99)) {
+      const rec = this.overrides?.get(s.id);
+      if (rec && rec.type === s.type) {
+        if (s.type === 'building') {
+          const rb = buildReplacedBuilding({ id: s.id, footprint: s.footprint, height: s.height }, rec);
+          if (rb) {
+            rb.overlayStart = this.overlaySegments.length;
+            this.overlaySegments.push(...rb.outline);
+            rb.overlayCount = rb.outline.length;
+            this.scene.add(rb.object);
+            this.solids.push(rb.object);
+            this.entities.set(`ov:${s.id}`, { kind: 'replaced', ...rb });
+            this.obstacles.push(s.footprint);
+            this.plots.push({ id: s.id, footprint: s.footprint, prompt: rec.prompt });
+          }
+        } else {
+          this.scene.add(forgedRoadMesh(s, rec));
+        }
+        continue;
+      }
+      const mesh = s.type === 'building' ? ghostBuildingMesh(s) : ghostRoadMesh(s);
+      this.scene.add(mesh);
+      this.ghosts.push({ ...s, mesh, visible: false });
+    }
+    // Shimmer: each ghost fades in and out on its own slow phase.
+    this.updaters.push((time) => {
+      for (const g of this.ghosts) {
+        const v = Math.sin(time * 0.55 + g.phase);
+        g.visible = v > 0.35;
+        const op = g.visible ? (0.15 + 0.45 * v) * (Math.random() > 0.12 ? 1 : 0.3) : 0;
+        g.mesh.visible = op > 0.02;
+        g.mesh.traverse((o) => { if (o.material) o.material.opacity = op; });
+      }
+    });
+  }
+
+  // A visible ghost at a ground point, for a click. Buildings by footprint,
+  // roads by nearness to the stub.
+  ghostAt([x, z]) {
+    for (const g of this.ghosts ?? []) {
+      if (!g.visible) continue;
+      if (g.type === 'building' && inside([x, z], g.footprint)) return g;
+      if (g.type === 'road') {
+        const [a, b] = g.points;
+        const dx = b[0] - a[0], dz = b[1] - a[1];
+        const L2 = dx * dx + dz * dz || 1;
+        let t = ((x - a[0]) * dx + (z - a[1]) * dz) / L2;
+        t = Math.max(0, Math.min(1, t));
+        const px = a[0] + dx * t, pz = a[1] + dz * t;
+        if (Math.hypot(x - px, z - pz) < g.width / 2 + 3) return g;
+      }
+    }
+    return null;
+  }
+
   finalize() {
     const b = this.bounds;
+    this.buildGhosts();
     // Grass in what's left of the lots.
     this.greens = greenMap(b, this.lots ?? [], this.obstacles);
     this.green = this.greens.test;

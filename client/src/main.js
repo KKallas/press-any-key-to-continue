@@ -990,17 +990,20 @@ function bboxLabel(fp) {
   for (const [x, z] of fp) { a = Math.min(a, x); c = Math.max(c, x); b = Math.min(b, z); d = Math.max(d, z); }
   return `${Math.round(c - a)}x${Math.round(d - b)} m`;
 }
-function openForge(id) {
+function openForge(id, type = 'building', footprint = null) {
   const plot = world.plots.find((p) => p.id === id);
   const rec = assets.get(id);
+  const fp = footprint || plot?.footprint || [[0, 0]];
   forgeOpen = true;
   flickerPlot = null;
-  say('MATRIX BLEED — TERMINAL OPEN', 2);
+  say(id.startsWith('ghost-') ? 'A GHOST — MAKE IT REAL' : 'MATRIX BLEED — TERMINAL OPEN', 2);
   forgeTerminal({
     id,
-    type: 'building',
+    type,
     prompt: rec?.prompt || plot?.prompt || '',
-    constraints: { footprint: bboxLabel(plot?.footprint || [[0, 0]]), 'max-height': 60, facade: '1024x1024 png' },
+    constraints: type === 'road'
+      ? { note: 'a road stub; use params.color for the asphalt', width: 12, facade: 'none' }
+      : { footprint: bboxLabel(fp), 'max-height': 60, facade: '1024x1024 png' },
     onDone: () => { forgeOpen = false; nextFlicker = (performance.now() - t0) / 1000 + 10; },
   });
 }
@@ -1146,6 +1149,13 @@ droneControl.onClick = (cx, cy) => {
   if (building && building === flickerPlot && !forgeOpen) {
     if (pendingClick) { clearTimeout(pendingClick.timer); pendingClick = null; }
     openForge(building);
+    return;
+  }
+  // A ghost at the edge, caught while it's there: forge it into being.
+  const ghost = !forgeOpen && world.ghostAt(at);
+  if (ghost) {
+    if (pendingClick) { clearTimeout(pendingClick.timer); pendingClick = null; }
+    openForge(ghost.id, ghost.type, ghost.footprint);
     return;
   }
   if (pendingClick) {
