@@ -259,17 +259,14 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
   // stencils keep clear of them.
   const nearCrossing = (x, z, pad) => crossings.some((j) => Math.hypot(j.x - x, j.z - z) < clearRadius(j) + pad);
 
-  // Parking: a parallel-parking lane hugging the kerb — a line about 2.2 m in
-  // from the kerb marking the lane, with short slot ticks across it. Confined
-  // to that kerb strip so it never reaches into a driving lane, and only on
-  // streets wide enough to spare the width. Clear of the crossings.
-  const LANE = 2.2; // width of the parking lane, against the kerb
-  g.setLineDash([]);
+  // Parking: a single dashed line close to the kerb (about 1.8 m in) marking a
+  // parallel-parking lane. No slots, no ticks — nothing that reaches toward the
+  // middle — and only on streets wide enough to spare the width.
+  const LANE = 1.8; // how far the parking line sits off the kerb
   g.globalAlpha = 0.4;
   for (const road of roads) {
-    if (road.width < 2 * LANE + 7) continue; // leave room for two driving lanes
-    const kerb = road.width / 2 - 0.5; // the edge line
-    const inner = kerb - LANE; // inner boundary of the parking lane
+    if (road.width < 2 * LANE + 9) continue; // keep two clear driving lanes
+    const inner = road.width / 2 - 0.5 - LANE; // just inside the edge line
     for (let i = 0; i < road.points.length - 1; i++) {
       const a = road.points[i];
       const b = road.points[i + 1];
@@ -282,7 +279,8 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
       for (const side of [-1, 1]) {
         if (r() < 0.35) continue;
         g.lineWidth = Math.max(1, 0.1 * m);
-        // The lane boundary line, parallel to the kerb, broken around crossings.
+        g.setLineDash([2.5 * m, 2.5 * m]);
+        // The parking line, parallel to the kerb, broken around crossings.
         let drawing = false;
         for (let d = 10; d <= L - 10; d += 1.5) {
           const bx = a[0] + dx * d + nx * inner * side;
@@ -294,18 +292,7 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
           else if (drawing) { g.stroke(); drawing = false; }
         }
         if (drawing) g.stroke();
-        // Slot ticks across the lane, every ~5.5 m.
-        for (let d = 12 + r() * 6; d < L - 12; d += 5.5) {
-          const ix = a[0] + dx * d + nx * inner * side;
-          const iz = a[1] + dz * d + nz * inner * side;
-          if (nearCrossing(ix, iz, 4)) continue;
-          const p0 = P([a[0] + dx * d + nx * kerb * side, a[1] + dz * d + nz * kerb * side]);
-          const p1 = P([ix, iz]);
-          g.beginPath();
-          g.moveTo(p0[0], p0[1]);
-          g.lineTo(p1[0], p1[1]);
-          g.stroke();
-        }
+        g.setLineDash([]);
       }
     }
   }
