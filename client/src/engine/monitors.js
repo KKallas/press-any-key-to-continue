@@ -164,18 +164,33 @@ export class MapScreen {
       g.stroke();
     }
 
-    // The admin booth: a blinking box with its code, so you can find the line
-    // that rebuilds the world.
-    if (state.adminBooth) {
-      const [ax, ay] = P(state.adminBooth.x, state.adminBooth.z);
-      const r = Math.max(3.5, H * 0.026);
-      g.strokeStyle = blink ? 'rgba(120,255,170,1)' : 'rgba(120,255,170,0.45)';
-      g.lineWidth = 1.5;
-      g.strokeRect(ax - r, ay - r, r * 2, r * 2);
-      g.fillStyle = g.strokeStyle;
+    // Phone booths: a small dot and a stem for each, so you can find a line.
+    for (const bth of state.booths ?? []) {
+      const [bx, by] = P(bth.x, bth.z);
+      g.strokeStyle = 'rgba(120,255,170,0.8)';
+      g.fillStyle = 'rgba(120,255,170,0.8)';
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.arc(bx, by, Math.max(2, H * 0.012), 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.moveTo(bx, by - H * 0.02);
+      g.lineTo(bx, by - H * 0.045);
+      g.stroke();
+    }
+    // Parking garages: a boxed P.
+    for (const gar of state.garages ?? []) {
+      const [gx, gy] = P(gar.x, gar.z);
+      const r = Math.max(4, H * 0.022);
+      g.strokeStyle = 'rgba(150,190,255,0.85)';
+      g.lineWidth = 1.3;
+      g.strokeRect(gx - r, gy - r, r * 2, r * 2);
+      g.fillStyle = 'rgba(150,190,255,0.95)';
       g.textAlign = 'center';
-      g.fillText('#99', ax, ay + r + 1);
+      g.textBaseline = 'middle';
+      g.fillText('P', gx, gy + 1);
       g.textAlign = 'left';
+      g.textBaseline = 'top';
     }
 
     // The car: a heading tick; the skin on foot: a dot.

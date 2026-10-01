@@ -9,6 +9,7 @@ import { markingsTexture, roadMarkingsTexture } from '../engine/textures.js';
 import { buildingOutline, blockOutlines } from '../engine/overlay.js';
 import { inside, buildDecoBlock, buildReplacedBuilding } from './deco.js';
 import { ghostSites, ghostBuildingMesh, ghostRoadMesh, forgedRoadMesh } from './ghosts.js';
+import { garageSites, garageMesh } from './garages.js';
 import { collisionMap } from '../engine/collision.js';
 import { greenMap, grassMesh } from '../engine/greens.js';
 import { RoadGraph } from '../engine/roads.js';
@@ -345,6 +346,9 @@ export class World {
   finalize() {
     const b = this.bounds;
     this.buildGhosts();
+    // Underground garages along the wider roads.
+    this.garages = this.roadLines ? garageSites(b, this.roadLines, 55, 10) : [];
+    for (const gsite of this.garages) this.scene.add(garageMesh(gsite));
     // Grass in what's left of the lots.
     this.greens = greenMap(b, this.lots ?? [], this.obstacles);
     this.green = this.greens.test;

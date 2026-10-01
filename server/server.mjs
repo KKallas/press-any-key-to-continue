@@ -30,11 +30,13 @@ import { OverrideStore } from './overrides.mjs';
 // never arbitrary input — so it's a control panel, not a shell. Pulling the
 // world is part of the game: anyone who finds the booth can rebuild it.
 // `systemd-run` detaches the job so it survives the very restart it triggers.
+const RELOAD = {
+  what: 'REBUILD WORLD — PULLING FROM GITHUB',
+  run: 'systemd-run --quiet --collect /usr/local/bin/pak-update --force',
+};
 const DIAL_CODES = {
-  '#99': {
-    what: 'REBUILD WORLD — PULLING FROM GITHUB',
-    run: 'systemd-run --quiet --collect /usr/local/bin/pak-update --force',
-  },
+  '#000*1': RELOAD, // system reload
+  '#99': RELOAD, // kept as an alias
 };
 let lastDial = 0; // a crude cooldown so the world can't be spammed into a restart loop
 

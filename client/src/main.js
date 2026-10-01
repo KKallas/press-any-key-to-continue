@@ -314,20 +314,13 @@ function use() {
   } else if (mode === 'foot') {
     const door = nearestDoor();
     if (door) {
-      insideDoor = door;
-      walker.route = null;
-      walker.active = false;
-      mode = 'inside';
-      server.append({ block: BLOCK, type: 'enter', id: 'skin', props: { plot: door.plot, x: walker.x, z: walker.z } });
-      // The feed cuts to the building's own camera.
-      interior = buildInterior(door.plot, door.plot.length * 7 + door.plot.charCodeAt(door.plot.length - 1));
-      loss = 1;
-      setActive(interior);
+      enterBuilding(door); // one way in, so maintenance (#000*2) always catches it
     } else if (carInReach()) {
       walker.active = false;
       walker.route = null;
       car.occupied = true;
       mode = 'car';
+      if (carStashed) { const e = world.entities.get('car1'); if (e?.object) e.object.visible = true; carStashed = false; }
       server.append({ block: BLOCK, type: 'move', transient: true, id: 'skin', props: { x: car.x, z: car.z, visible: false } });
     }
   } else if (mode === 'inside') {
@@ -388,6 +381,12 @@ function enterBuilding(door, asCafe = false) {
   loss = 1;
   setActive(interior);
   syncHint();
+  // Dialed #000*2 at a booth? This is the maintenance entry: the terminal opens
+  // on the building you just walked into.
+  if (maintenanceArmed) {
+    maintenanceArmed = false;
+    setTimeout(() => openForge(door.plot, 'building'), 400);
+  }
 }
 
 function leaveBuilding() {
@@ -480,44 +479,57 @@ async function hackSystem() {
   }
 }
 
-function jackBooth(b) {
-  if (b.admin) { dialPad(); return; } // the admin line: dial, don't jack a modem in
+// Every booth is a phone line now: walking up to one opens the dial pad.
+function jackBooth() {
+  dialPad();
+}
+// Jacking a modem in for the net (the café/online mechanic) is a separate act.
+function jackBoothOnline(b) {
   booth = { id: b.id, x: b.x, z: b.z, start: performance.now() / 1000 };
   say('ONLINE — WATCH THE STREET', 2.5);
 }
 
-// The admin line. A keypad over the feed: dial a code and the server acts on
-// it. #99 rebuilds the world. Anyone can use it — that's part of the game.
+// The phone line. A keypad over the feed:
+//   #000*1  system reload — rebuild the world from GitHub (server does it)
+//   #000*2  maintenance — the next building you enter opens its terminal
+// Anyone can dial. That's part of the game.
 function dialPad() {
   if (document.querySelector('.dialpad')) return;
   const wrap = document.createElement('div');
   wrap.className = 'mg dialpad';
   wrap.innerHTML = `
     <div class="mg-box">
-      <div class="mg-head"><span>ADMIN LINE</span><span class="mg-sub">booth #99</span></div>
+      <div class="mg-head"><span>PHONE LINE</span><span class="mg-sub">dial a code</span></div>
       <div class="mg-body">
-        <div class="mg-line">DIAL A CODE, THEN CALL.</div>
-        <div class="mg-line">#99 — REBUILD THE WORLD FROM GITHUB.</div>
-        <input class="dial-in" autocomplete="off" spellcheck="false" aria-label="dial" value="#99" />
+        <div class="mg-line">#000*1 — SYSTEM RELOAD (REBUILD THE WORLD)</div>
+        <div class="mg-line">#000*2 — MAINTENANCE: NEXT BUILDING YOU ENTER</div>
+        <input class="dial-in" autocomplete="off" spellcheck="false" aria-label="dial" value="#000*" />
       </div>
       <div class="mg-foot" id="dial-msg"></div>
     </div>`;
   document.body.appendChild(wrap);
   const input = wrap.querySelector('.dial-in');
-  input.style.cssText = 'background:transparent;border:1px solid rgba(125,255,154,0.5);color:#7dff9a;font:28px "VT323","Courier New",monospace;text-align:center;letter-spacing:0.35em;padding:6px 10px;width:170px;outline:none;text-shadow:inherit;';
+  input.style.cssText = 'background:transparent;border:1px solid rgba(125,255,154,0.5);color:#7dff9a;font:28px "VT323","Courier New",monospace;text-align:center;letter-spacing:0.35em;padding:6px 10px;width:200px;outline:none;text-shadow:inherit;';
   const msg = wrap.querySelector('#dial-msg');
   const close = () => wrap.remove();
   input.focus();
-  input.select();
+  input.setSelectionRange(input.value.length, input.value.length);
   const call = () => {
     const code = input.value.trim();
     if (!code) return;
+    if (code === '#000*2') {
+      armMaintenance();
+      msg.textContent = 'MAINTENANCE ARMED — ENTER A BUILDING';
+      setTimeout(close, 1100);
+      return;
+    }
     if (!net) { msg.textContent = 'DEAD LINE — NO SERVER (SOLO)'; return; }
     const ok = net.dial(code);
     msg.textContent = ok ? `CALLING ${code}…` : 'DEAD LINE';
     if (ok) setTimeout(close, 900);
   };
   input.addEventListener('keydown', (e) => {
+    e.stopPropagation(); // let the keypad be typed into without the game grabbing keys
     if (e.key === 'Enter') call();
     else if (e.key === 'Escape') close();
   });
@@ -596,8 +608,10 @@ function buildActions() {
   }
   // On foot.
   const b = nearestBooth();
-  if (b?.admin) A.push({ label: 'DIAL · ADMIN LINE', run: dialPad });
-  else if (b) A.push({ label: 'JACK IN · BOOTH', run: () => jackBooth(b), need: 'modem', disabled: !inventory.has('modem'), note: 'need a modem' });
+  if (b) {
+    A.push({ label: 'DIAL', run: dialPad });
+    A.push({ label: 'JACK IN · NET', run: () => jackBoothOnline(b), need: 'modem', disabled: !inventory.has('modem'), note: 'need a modem' });
+  }
   const pc = nearestParkedCar();
   if (pc) {
     if (pc.broken) A.push({ label: 'GET IN', run: () => takeCar(pc) });
@@ -976,6 +990,22 @@ let flickerPlot = null;
 let flickerUntil = 0;
 let nextFlicker = 8;
 let forgeOpen = false;
+let maintenanceArmed = false; // #000*2 at a booth: the next building you enter opens its terminal
+function armMaintenance() {
+  maintenanceArmed = true;
+  say('MAINTENANCE ARMED — ENTER A BUILDING', 3);
+}
+// When a building has never been described, make one up so the terminal opens
+// on something to edit rather than a blank page.
+function describeBuilding(id, plot) {
+  const k = kindOf(id);
+  const kinds = { bank: 'a bank', cafe: 'an internet café', store: 'a corner store', respray: 'a respray garage', plain: 'a tenement' };
+  const fp = plot?.footprint || [[0, 0]];
+  const h = Math.round((plot?.height) || 20);
+  const floors = Math.max(1, Math.round(h / 3.3));
+  const what = kinds[k] || 'a building';
+  return `${what}, ${floors} storeys of rain-stained concrete, lit windows and a dead neon sign over the door. ${bboxLabel(fp)} on its lot. Rewrite this into what it should become.`;
+}
 function updateFlicker(time) {
   if (forgeOpen) { flickerPlot = null; return; }
   if (flickerPlot && time > flickerUntil) flickerPlot = null;
@@ -1000,7 +1030,7 @@ function openForge(id, type = 'building', footprint = null) {
   forgeTerminal({
     id,
     type,
-    prompt: rec?.prompt || plot?.prompt || '',
+    prompt: rec?.prompt || plot?.prompt || (type === 'road' ? 'a short service road, wet asphalt under sodium light; set params.color.' : describeBuilding(id, plot)),
     constraints: type === 'road'
       ? { note: 'a road stub; use params.color for the asphalt', width: 12, facade: 'none' }
       : { footprint: bboxLabel(fp), 'max-height': 60, facade: '1024x1024 png' },
@@ -1071,6 +1101,35 @@ function doorOf(plot, from, byCar = false) {
   return best;
 }
 
+// The garage nearest a building's door, if one is close enough to use.
+function garageFor(door) {
+  let best = null;
+  let bd = 95; // within this of the door, you'd park in the garage, not the kerb
+  for (const g of world.garages ?? []) {
+    const d = Math.hypot(g.x - door.hx, g.z - door.hz);
+    if (d < bd) { bd = d; best = g; }
+  }
+  return best;
+}
+// Arrived at the garage (or kerb): stash the car, get out, walk to the door.
+let carStashed = false;
+function parkAndWalk(door, garage) {
+  const side = car.heading + Math.PI / 2;
+  if (!walker.place(car.x + Math.cos(side) * 2.2, car.z - Math.sin(side) * 2.2)) walker.place(car.x, car.z, false);
+  car.occupied = false;
+  autopilot.cancel();
+  walker.active = true;
+  mode = 'foot';
+  if (garage) {
+    const e = world.entities.get('car1');
+    if (e?.object) e.object.visible = false; // down the ramp, out of sight
+    carStashed = true;
+  }
+  say(garage ? `PARKED · ${garage.id.toUpperCase().replace('-', ' ')} — ON FOOT` : 'PARKED AT THE KERB — ON FOOT', 2.5);
+  const pts = footNav.findPath([walker.x, walker.z], [door.hx, door.hz], { offRoad: 1 });
+  if (pts) walker.follow(pts, false, primaryAction);
+}
+
 // The booth nearest a clicked point, if the click landed on one.
 function boothAt([x, z], reach = 5) {
   let best = null;
@@ -1094,23 +1153,25 @@ let pendingCarAction = null;
 function waypoint([x, z], fast, building = null, booth = null) {
   if (mode === 'car') {
     pendingCarAction = null;
-    const park = building && places.parking.get(building);
-    if (park) {
-      const entry = { plot: building, ...park };
-      const act = () => (park.respray ? respray(entry) : parkCar(entry));
-      // Already at the entrance? Just do it. Otherwise drive in and do it on arrival.
-      if (Math.hypot(car.x - park.hx, car.z - park.hz) < 7 && Math.abs(car.speed) < 3) return act();
-      if (!autopilot.go([park.hx, park.hz], fast ? 'stunt' : 'normal')) return say('NO ROUTE');
-      autopilot.route.label = park.respray ? 'TO RESPRAY' : 'TO GARAGE';
-      pendingCarAction = { at: [park.hx, park.hz], run: act };
+    // Driving to a building: park in its nearest underground garage (or at the
+    // kerb, if none is close) and walk the rest.
+    if (building) {
+      const door = doorOf(building, [car.x, car.z], true);
+      if (!door) { say('NO WAY IN'); return; }
+      const garage = garageFor(door);
+      const at = garage ? [garage.x, garage.z] : [door.hx, door.hz];
+      const run = () => parkAndWalk(door, garage);
+      if (Math.hypot(car.x - at[0], car.z - at[1]) < 7 && Math.abs(car.speed) < 3) return run();
+      if (!autopilot.go(at, fast ? 'stunt' : 'normal')) return say('NO ROUTE');
+      autopilot.route.label = garage ? `TO ${garage.id.toUpperCase().replace('-', ' ')}` : `TO ${building.toUpperCase()}`;
+      pendingCarAction = { at, run };
       return;
     }
-    const door = building ? doorOf(building, [car.x, car.z], true) : null;
-    const goal = door ? [door.hx, door.hz] : booth ? [booth.x, booth.z] : [x, z];
+    const goal = booth ? [booth.x, booth.z] : [x, z];
     if (!autopilot.go(goal, fast ? 'stunt' : 'normal')) say('NO ROUTE');
     else {
-      autopilot.route.label = door ? `TO ${door.plot.toUpperCase()}` : booth ? 'TO BOOTH' : '';
-      if (!door && !autopilot.route.reached) say(autopilot.route.parking ? 'PARKING AT THE KERB' : 'CAN\'T GET CLOSER BY CAR');
+      autopilot.route.label = booth ? 'TO BOOTH' : '';
+      if (!autopilot.route.reached) say(autopilot.route.parking ? 'PARKING AT THE KERB' : 'CAN\'T GET CLOSER BY CAR');
     }
     return;
   }
@@ -1186,6 +1247,9 @@ $('map').addEventListener('click', (e) => {
 // ---- Input -----------------------------------------------------------------
 
 window.addEventListener('keydown', (e) => {
+  // While a terminal or minigame owns the keyboard, the game ignores keys, so
+  // you can type freely.
+  if (forgeOpen || busy) return;
   // Driving keys must not scroll the page or press a focused button.
   if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
     e.preventDefault();
@@ -1290,7 +1354,8 @@ function game(dt, time) {
       dest: currentDest(),
       pursuers: pursuit?.contacts(),
       players: net?.contacts(),
-      adminBooth: world.adminBooth,
+      booths: world.booths,
+      garages: world.garages,
       heat: pursuit?.heat ?? 0,
       heatLabel: pursuit?.label(),
     });
