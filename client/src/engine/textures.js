@@ -259,12 +259,17 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
   // stencils keep clear of them.
   const nearCrossing = (x, z, pad) => crossings.some((j) => Math.hypot(j.x - x, j.z - z) < clearRadius(j) + pad);
 
-  // Parking bays: proper car-length slots (~5.5 m) ticked square to the kerb,
-  // along the wider streets, clear of the crossings.
+  // Parking: a parallel-parking lane hugging the kerb — a line about 2.2 m in
+  // from the kerb marking the lane, with short slot ticks across it. Confined
+  // to that kerb strip so it never reaches into a driving lane, and only on
+  // streets wide enough to spare the width. Clear of the crossings.
+  const LANE = 2.2; // width of the parking lane, against the kerb
   g.setLineDash([]);
   g.globalAlpha = 0.4;
   for (const road of roads) {
-    if (road.width < 12) continue; // only streets with room for a parking lane
+    if (road.width < 2 * LANE + 7) continue; // leave room for two driving lanes
+    const kerb = road.width / 2 - 0.5; // the edge line
+    const inner = kerb - LANE; // inner boundary of the parking lane
     for (let i = 0; i < road.points.length - 1; i++) {
       const a = road.points[i];
       const b = road.points[i + 1];
@@ -276,16 +281,26 @@ export function roadMarkingsTexture(size, roads, seed, junctions = []) {
       const nz = dx;
       for (const side of [-1, 1]) {
         if (r() < 0.35) continue;
-        const off = road.width / 2 - 0.6;
-        const bay = 5.5; // a car plus a little
-        const depth = 2.6;
-        g.lineWidth = Math.max(1, 0.12 * m);
-        for (let d = 12 + r() * 6; d < L - 12; d += bay) {
-          const cx0 = a[0] + dx * d + nx * off * side;
-          const cz0 = a[1] + dz * d + nz * off * side;
-          if (nearCrossing(cx0, cz0, 4)) continue;
-          const p0 = P([cx0, cz0]);
-          const p1 = P([cx0 - nx * depth * side, cz0 - nz * depth * side]);
+        g.lineWidth = Math.max(1, 0.1 * m);
+        // The lane boundary line, parallel to the kerb, broken around crossings.
+        let drawing = false;
+        for (let d = 10; d <= L - 10; d += 1.5) {
+          const bx = a[0] + dx * d + nx * inner * side;
+          const bz = a[1] + dz * d + nz * inner * side;
+          const clear = !nearCrossing(bx, bz, 4);
+          const q = P([bx, bz]);
+          if (clear && !drawing) { g.beginPath(); g.moveTo(q[0], q[1]); drawing = true; }
+          else if (clear) g.lineTo(q[0], q[1]);
+          else if (drawing) { g.stroke(); drawing = false; }
+        }
+        if (drawing) g.stroke();
+        // Slot ticks across the lane, every ~5.5 m.
+        for (let d = 12 + r() * 6; d < L - 12; d += 5.5) {
+          const ix = a[0] + dx * d + nx * inner * side;
+          const iz = a[1] + dz * d + nz * inner * side;
+          if (nearCrossing(ix, iz, 4)) continue;
+          const p0 = P([a[0] + dx * d + nx * kerb * side, a[1] + dz * d + nz * kerb * side]);
+          const p1 = P([ix, iz]);
           g.beginPath();
           g.moveTo(p0[0], p0[1]);
           g.lineTo(p1[0], p1[1]);
