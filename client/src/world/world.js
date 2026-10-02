@@ -205,8 +205,10 @@ export class World {
       this.overlaySegments.push(...built.outline);
       built.overlayCount = built.outline.length;
       this.scene.add(built.object);
-      // Glow (neon, lit windows' frames) is light, not something you can't see through.
-      for (const m of built.object.children) if (m.name !== 'glow') this.solids.push(m);
+      // Glow (neon, lit windows' frames) is light, not something you can't see
+      // through; roof water and steam are thin decoration, not occluders.
+      for (const m of built.object.children) if (m.isMesh && m.name !== 'glow' && m.name !== 'water') this.solids.push(m);
+      if (built.update) this.updaters.push(built.update);
       this.entities.set(id, { kind, ...built });
       for (const [p, rec] of replaced) {
         const rb = buildReplacedBuilding(p, rec);

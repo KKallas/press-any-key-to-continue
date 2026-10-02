@@ -38,6 +38,10 @@ export function decoMaterials() {
     trim: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.45 }),
     // Unlit and brighter than white, so neon and beacons bloom.
     glow: new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(5, 5, 5) }),
+    // Standing water on the roof: the same dark, near-mirror surface as the wet
+    // asphalt (props.js), so rooftop pools catch the lamps and neon as specular
+    // glints instead of reading as a flat painted colour.
+    water: new THREE.MeshStandardMaterial({ color: 0x030405, roughness: 0.05, metalness: 0.0 }),
   };
   return MATS;
 }
@@ -488,10 +492,11 @@ function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, r
           const rr = rad * (0.6 + r() * 0.5);
           poly.push([p[0] + Math.cos(t) * rr, p[1] + Math.sin(t) * rr * (0.7 + r() * 0.3)]);
         }
-        // Dark and glossy (the trim material catches light), so it reads as
-        // standing water the way the street puddles do — not a bright shape.
+        // Dark and near-mirror (the water material, same as the wet asphalt),
+        // so it reads as standing water catching the lamps as specular glints —
+        // not a flat painted shape. Goes in its own mesh, not the merged trim.
         if (poly.every((q) => inside(q, pts))) {
-          B.trim.cap(poly, y + 0.03, PUDDLE);
+          B.water.cap(poly, y + 0.05, PUDDLE);
           // Neon next door reflects in the water: a faint coloured sheen, the
           // way the wet asphalt catches the signs.
           const neon = neonAt(p[0], p[1]);
@@ -499,7 +504,7 @@ function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, r
             // A tint, not a lamp: this feeds the bloom pass, so keep it low or
             // the whole roof turns into a glowing smear.
             const sheen = neon.color.clone().multiplyScalar(0.02 + neon.strength * 0.13);
-            B.glow.cap(poly, y + 0.04, sheen);
+            B.glow.cap(poly, y + 0.06, sheen);
           }
         }
       } else if (kind === 'skylight') {
@@ -517,8 +522,11 @@ function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, r
         B.trim.box(p[0], y + 0.45, p[1], 1.3, 0.9, 0.9, ang, METAL);
         B.roof.box(p[0], y + 0.92, p[1], 0.7, 0.05, 0.7, ang, DARKMETAL);
       } else if (kind === 'vent') {
-        B.trim.box(p[0], y + 0.5, p[1], 0.35, 1, 0.35, 0, METAL);
-        B.trim.box(p[0], y + 1.05, p[1], 0.55, 0.1, 0.55, 0, METAL);
+        // A stub stack with a wider cowl; about half of them breathe steam.
+        const vh = 0.9 + r() * 0.7;
+        B.trim.box(p[0], y + vh / 2, p[1], 0.35, vh, 0.35, 0, METAL);
+        B.trim.box(p[0], y + vh + 0.05, p[1], 0.55, 0.1, 0.55, 0, METAL);
+        if (B.steam && r() < 0.5) B.steam.push({ x: p[0], y: y + vh + 0.15, z: p[1] });
       } else if (kind === 'chimney') {
         const h = 1.4 + r() * 1.4;
         B.roof.box(p[0], y + h / 2, p[1], 0.7, h, 0.7, ang, BRICK);
@@ -566,8 +574,11 @@ function rooftop(B, r, fp, cen, podiumTop, firstTier, topRect, tierTop, crown, r
     if (a > 45) place(pts, y, avoid, 1 + Math.floor(a / 220), ['skylight', 'skylight', 'puddle']);
     // Signage on the top deck.
     if (top && a > 60) sign(B, r, cen, y, pts);
-    // Then the hard clutter, sparser than before.
-    place(pts, y, avoid, Math.min(5, 1 + Math.floor(a / 160)), ['ac', 'vent', 'chimney', 'dish', 'tank', 'antenna']);
+    // The roof is littered with plant: AC cabinets, vent stacks and antennas,
+    // thick enough that the deck reads as working machinery, not bare felt.
+    place(pts, y, avoid, Math.min(10, 3 + Math.floor(a / 55)), ['ac', 'ac', 'vent', 'vent', 'antenna', 'ac', 'vent']);
+    // A thinner scatter of the taller, rarer kit on top of that.
+    place(pts, y, avoid, Math.min(4, 1 + Math.floor(a / 180)), ['chimney', 'dish', 'tank', 'antenna']);
   };
 
   if (firstTier) {
@@ -652,13 +663,73 @@ function fireEscape(B, r, fp, cen, top) {
   }
 }
 
+// A soft round puff for steam — grey and translucent, the way the drone sees
+// vapour: no colour, just a smudge that rises and thins. One shared texture.
+let STEAM_TEX = null;
+function steamTexture() {
+  if (STEAM_TEX) return STEAM_TEX;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(205,210,214,0.85)');
+  grad.addColorStop(0.45, 'rgba(170,176,182,0.3)');
+  grad.addColorStop(1, 'rgba(150,156,162,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  STEAM_TEX = new THREE.CanvasTexture(c);
+  return STEAM_TEX;
+}
+
+// Steam rising off some of the vents: a few soft sprites per emitter that drift
+// up, swell and fade, then drop back to the lip and start again. Sprites face
+// the camera on their own, so this only has to move and resize them each frame.
+// Returns a group plus an update(time) the world ticks. Capped per block.
+function buildSteam(emitters, seed) {
+  if (!emitters.length) return null;
+  const r = rng(seed);
+  const picked = emitters.slice(0, 6); // keep the sprite count sane per block
+  const tex = steamTexture();
+  const group = new THREE.Group();
+  const puffs = [];
+  for (const e of picked) {
+    const n = 3 + Math.floor(r() * 2);
+    const rise = 3 + r() * 2.5;       // how high this plume climbs
+    const drift = (r() - 0.5) * 1.4;  // a lean on the wind
+    for (let i = 0; i < n; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: tex, color: 0x9aa1a8, transparent: true, opacity: 0,
+        depthWrite: false, blending: THREE.NormalBlending,
+      });
+      const sp = new THREE.Sprite(mat);
+      sp.position.set(e.x, e.y, e.z);
+      group.add(sp);
+      puffs.push({ sp, base: e, rise, drift, phase: r(), rate: 0.1 + r() * 0.06, sway: r() * Math.PI * 2 });
+    }
+  }
+  const update = (time) => {
+    const t = time * 0.001;
+    for (const p of puffs) {
+      const f = (p.phase + t * p.rate) % 1;        // 0..1 life
+      const sway = Math.sin(t * 0.6 + p.sway) * 0.4 * f;
+      p.sp.position.set(p.base.x + p.drift * f + sway, p.base.y + 0.4 + f * p.rise, p.base.z + sway * 0.5);
+      const s = 0.7 + f * 2.6;
+      p.sp.scale.set(s, s, s);
+      // In fast, out slow, nothing at the very start or very end.
+      p.sp.material.opacity = 0.45 * Math.sin(Math.min(1, f * 1.3) * Math.PI) * (1 - f * 0.25);
+    }
+  };
+  return { group, update };
+}
+
 // All the buildings of one block, merged: four meshes for the whole block.
 export function buildDecoBlock(plots, skip = new Set()) {
   // Plots in `skip` have a player's override and are built on their own (see
   // buildReplacedBuilding), so they're left out of the merged block mesh.
   if (skip.size) plots = plots.filter((p) => !skip.has(p.id));
   const M = decoMaterials();
-  const B = { walls: new Builder(), roof: new Builder(), trim: new Builder(), glow: new Builder() };
+  const B = { walls: new Builder(), roof: new Builder(), trim: new Builder(), glow: new Builder(), water: new Builder() };
+  B.steam = []; // vent positions that breathe steam, filled during rooftop()
   const outline = [];
   // Where the neon signs are in this block, so a wet roof can reflect the one
   // next door (cross-block neighbours aren't known here; within a block is).
@@ -681,13 +752,16 @@ export function buildDecoBlock(plots, skip = new Set()) {
     }
   }
   const group = new THREE.Group();
-  for (const [k, b] of Object.entries(B)) {
-    const m = b.mesh(M[k]);
+  for (const k of ['walls', 'roof', 'trim', 'glow', 'water']) {
+    const m = B[k].mesh(M[k]);
     if (m) {
       m.name = k;
       group.add(m);
     }
   }
+  // Steam off the vents, with its own per-frame updater.
+  const steam = buildSteam(B.steam, (plots[0]?.seed ?? 1) ^ 0x57ea3);
+  if (steam) { group.add(steam.group); return { object: group, outline, update: steam.update }; }
   return { object: group, outline };
 }
 
