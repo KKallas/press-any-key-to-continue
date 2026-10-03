@@ -7,7 +7,7 @@
 //                     key. Give it and you're back, colour and all.
 //
 // A plain handle it doesn't know, and no injection, is turned away, with a
-// nudge toward the injection. The server decides all of this (auth.mjs); this
+// nudge toward the injection. The server decides all of this (auth.py); this
 // is only the terminal it's typed into, and the link under the prompt points
 // at where the real thing is taught.
 

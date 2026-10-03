@@ -11,7 +11,7 @@ The client was already built as if a server existed: the world is a log of event
 ```
        ┌── operator A ──┐        state 15×/s        ┌──────────────┐
        │  browser       │  ───────────────────────▶ │              │
-       └────────────────┘  ◀── snapshot 12.5×/s ─── │  server.mjs  │
+       └────────────────┘  ◀── snapshot 12.5×/s ─── │  server.py   │
        ┌── operator B ──┐  ───────────────────────▶ │  (≤100)      │
        │  browser       │  ◀─────────────────────── │              │
        └────────────────┘                           └──────────────┘
@@ -25,13 +25,13 @@ The police and the link are still worked out on each client, so for now every op
 
 ```bash
 cd server
-npm install          # once, for ws
-node server.mjs      # serves the client and the world on http://localhost:8000
+pip install -r requirements.txt   # once, for aiohttp
+python3 server.py                 # serves the client and the world on http://localhost:8000
 ```
 
 Open `http://localhost:8000` and you're at the login. The server hosts the client too, so that's the only thing to run. For solo work without a server, `python3 serve.py` inside `client/` still works, and adding `#solo` to the address skips the login and the network even when a server is there.
 
-`PORT=9000 node server.mjs` moves it. To let others on your network in, they point their browser at your machine's address; put it behind a TLS proxy before it ever faces the open internet (the login is a game gate, not real security).
+`PORT=9000 python3 server.py` moves it. To let others on your network in, they point their browser at your machine's address; put it behind a TLS proxy before it ever faces the open internet (the login is a game gate, not real security).
 
 ## The way in is an injection
 

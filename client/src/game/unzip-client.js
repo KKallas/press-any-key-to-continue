@@ -1,7 +1,7 @@
 // A tiny zip reader for the browser, so a forged bundle can be previewed before
 // it's ever sent to the server. Reads the central directory and inflates
 // stored (0) or deflated (8) entries with the platform's own DecompressionStream
-// — no dependency. Mirrors server/unzip.mjs.
+// — no dependency. The server opens the same bundle in overrides.py.
 
 const EOCD = 0x06054b50;
 const CEN = 0x02014b50;

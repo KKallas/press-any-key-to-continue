@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot setup for a fresh Ubuntu 24.04 droplet. Installs Node, the app,
+# One-shot setup for a fresh Ubuntu 24.04 droplet. Installs Python, the app,
 # a systemd service, Caddy (automatic HTTPS), and an hourly self-update timer.
 # Re-running it is safe; it also acts as a redeploy.
 #
@@ -14,13 +14,7 @@ APP_DIR=/opt/press-any-key
 echo ">>> packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git curl
-
-echo ">>> node 20 LTS"
-if ! command -v node >/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get install -y nodejs
-fi
+apt-get install -y git curl python3 python3-aiohttp
 
 echo ">>> code"
 if [ -d "$APP_DIR/.git" ]; then
@@ -31,7 +25,6 @@ else
   git clone --depth 1 "$REPO" "$APP_DIR"
 fi
 cd "$APP_DIR/server"
-npm install --omit=dev
 
 echo ">>> service"
 cat >/etc/systemd/system/pak.service <<UNIT
@@ -41,7 +34,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=$APP_DIR/server
-ExecStart=/usr/bin/node server.mjs
+ExecStart=/usr/bin/python3 server.py
 Environment=PORT=8000
 Restart=always
 RestartSec=2

@@ -497,6 +497,7 @@ function jackBoothOnline(b) {
 // The phone line. A keypad over the feed:
 //   #000*1  system reload — rebuild the world from GitHub (server does it)
 //   #000*2  maintenance — the next building you enter opens its terminal
+//   #000*3 … #000*7  the edit lines — see EDIT_LINES
 // Anyone can dial. That's part of the game.
 function dialPad() {
   if (document.querySelector('.dialpad')) return;
@@ -508,6 +509,7 @@ function dialPad() {
       <div class="mg-body">
         <div class="mg-line">#000*1 — SYSTEM RELOAD (REBUILD THE WORLD)</div>
         <div class="mg-line">#000*2 — MAINTENANCE: NEXT BUILDING YOU ENTER</div>
+        ${Object.entries(EDIT_LINES).map(([code, l]) => `<div class="mg-line">${code} — EDIT ${l.what}</div>`).join('\n        ')}
         <input class="dial-in" autocomplete="off" spellcheck="false" aria-label="dial" value="#000*" />
       </div>
       <div class="mg-foot" id="dial-msg"></div>
@@ -526,6 +528,16 @@ function dialPad() {
       armMaintenance();
       msg.textContent = 'MAINTENANCE ARMED — ENTER A BUILDING';
       setTimeout(close, 1100);
+      return;
+    }
+    // An edit line, with an optional trailing digit to pick which one (the
+    // third thing in the KIT is #000*73).
+    const line = EDIT_LINES[code] ?? EDIT_LINES[code.slice(0, -1)];
+    if (line) {
+      const target = line.pick(EDIT_LINES[code] ? 0 : Number(code.slice(-1)) - 1);
+      if (!target) { msg.textContent = `NOTHING ON THAT LINE: ${line.what}`; return; }
+      close();
+      openForge(target.id, target.type, target.footprint ?? null, target);
       return;
     }
     if (!net) { msg.textContent = 'DEAD LINE — NO SERVER (SOLO)'; return; }
@@ -1030,21 +1042,108 @@ function bboxLabel(fp) {
   for (const [x, z] of fp) { a = Math.min(a, x); c = Math.max(c, x); b = Math.min(b, z); d = Math.max(d, z); }
   return `${Math.round(c - a)}x${Math.round(d - b)} m`;
 }
-function openForge(id, type = 'building', footprint = null) {
+// The edit lines: a code for each kind of thing, so every part of the city can
+// be reached for rewriting without waiting for a building to bleed. Each opens
+// the utility terminal on the nearest thing of its kind, with a made-up
+// description to start from if nobody has written one yet.
+function segDist(px, pz, [ax, az], [bx, bz]) {
+  const dx = bx - ax, dz = bz - az;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1)));
+  return Math.hypot(px - ax - t * dx, pz - az - t * dz);
+}
+function nearestPlot() {
+  if (mode === 'inside') return world.plots.find((p) => p.id === insideDoor.plot) ?? null;
+  const [px, pz] = playerAt();
+  let best = null, bestD = Infinity;
+  for (const p of world.plots) {
+    const n = p.footprint.length;
+    const cx = p.footprint.reduce((a, v) => a + v[0], 0) / n, cz = p.footprint.reduce((a, v) => a + v[1], 0) / n;
+    const d = Math.hypot(cx - px, cz - pz);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+const EDIT_LINES = {
+  '#000*3': {
+    what: 'THE NEAREST BUILDING',
+    pick: () => {
+      const p = nearestPlot();
+      return p && { id: p.id, type: 'building', footprint: p.footprint };
+    },
+  },
+  '#000*4': {
+    what: 'THE NEAREST ROAD',
+    pick: () => {
+      const [px, pz] = playerAt();
+      let best = null, bestD = Infinity;
+      for (const r of world.roadLines ?? []) {
+        for (let i = 0; i + 1 < r.points.length; i++) {
+          const d = segDist(px, pz, r.points[i], r.points[i + 1]);
+          if (d < bestD) { bestD = d; best = r; }
+        }
+      }
+      return best && {
+        id: best.id, type: 'road',
+        prompt: `${best.name || 'an unnamed street'}, a ${best.class} road ${best.width} m wide, wet asphalt under sodium light. Rewrite what this road is.`,
+        constraints: { width: best.width, class: best.class, note: 'keep where it meets the other roads; use params.color for the asphalt', facade: 'none' },
+      };
+    },
+  },
+  '#000*5': {
+    what: 'THE NEAREST CAR',
+    pick: () => {
+      const [px, pz] = playerAt();
+      let id = 'car1', bestD = Math.hypot(car.x - px, car.z - pz);
+      for (const pc of world.parkedCars) {
+        const d = Math.hypot(pc.x - px, pc.z - pz);
+        if (d < bestD) { bestD = d; id = pc.id; }
+      }
+      return {
+        id, type: 'car',
+        prompt: 'a tired late-nineties sedan, one headlight dimmer than the other, a lock that gives to a steel ruler. Rewrite what this car is and how it behaves.',
+        constraints: { length: '4.5 m', note: 'a car; use params.color for the paint', facade: 'none' },
+      };
+    },
+  },
+  '#000*6': {
+    what: 'THE ROOM IN THE NEAREST BUILDING',
+    pick: () => {
+      const p = nearestPlot();
+      return p && {
+        id: `${p.id}-room`, type: 'room',
+        prompt: 'a lobby after hours: a desk, a terminal left on, a strip light that can\'t decide. Rewrite what is in this room and what can be done here.',
+        constraints: { inside: p.id, footprint: bboxLabel(p.footprint), interior: 'room.json', facade: 'none' },
+      };
+    },
+  },
+  '#000*7': {
+    what: 'A THING IN YOUR KIT (ADD 1-9 FOR WHICH)',
+    pick: (slot) => {
+      const it = inventory.list()[slot];
+      return it && {
+        id: `item-${it.id}`, type: 'item',
+        prompt: `${it.name}: ${it.note}. Rewrite what this item is and what it lets you do.`,
+        constraints: { note: 'something a skin carries; say what it opens', facade: 'none' },
+      };
+    },
+  },
+};
+
+function openForge(id, type = 'building', footprint = null, base = null) {
   const plot = world.plots.find((p) => p.id === id);
   const rec = assets.get(id);
   const fp = footprint || plot?.footprint || [[0, 0]];
   forgeOpen = true;
   flickerPlot = null;
-  say(id.startsWith('ghost-') ? 'A GHOST — MAKE IT REAL' : 'MATRIX BLEED — TERMINAL OPEN', 2);
+  say(id.startsWith('ghost-') ? 'A GHOST — MAKE IT REAL' : base ? 'EDIT LINE — TERMINAL OPEN' : 'MATRIX BLEED — TERMINAL OPEN', 2);
   forgeTerminal({
     id,
     type,
     footprint: fp,
-    prompt: rec?.prompt || plot?.prompt || (type === 'road' ? 'a short service road, wet asphalt under sodium light; set params.color.' : describeBuilding(id, plot)),
-    constraints: type === 'road'
+    prompt: rec?.prompt || base?.prompt || plot?.prompt || (type === 'road' ? 'a short service road, wet asphalt under sodium light; set params.color.' : describeBuilding(id, plot)),
+    constraints: base?.constraints ?? (type === 'road'
       ? { note: 'a road stub; use params.color for the asphalt', width: 12, facade: 'none' }
-      : { footprint: bboxLabel(fp), 'max-height': 60, facade: '1024x1024 png' },
+      : { footprint: bboxLabel(fp), 'max-height': 60, facade: '1024x1024 png' }),
     onDone: () => { forgeOpen = false; nextFlicker = (performance.now() - t0) / 1000 + 10; },
   });
 }
@@ -1500,4 +1599,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handy for poking at the world from the console.
-window.pak = { net, mission, pursuit, inventory, access, places, assets, MINIGAMES, logout: () => { clearSession(); location.reload(); }, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
+window.pak = { net, mission, pursuit, inventory, access, places, assets, MINIGAMES, logout: () => { clearSession(); location.reload(); }, buildActions, doAction, booth: () => booth, cafe: () => cafe, parked: () => parked, interior: () => interior, skinLost, roads, doorOf, ghostOutline, hoveredBuilding, pointer, server, world, pipeline, car, walker, use, dialPad, mode: () => mode, autopilot, carNav, footNav, waypoint, drone: droneControl, hack: (id) => hack(world.cameras.get(id)), backToDrone };
